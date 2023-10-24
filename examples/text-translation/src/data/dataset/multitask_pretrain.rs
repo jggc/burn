@@ -91,9 +91,9 @@ impl MultiTaskDataset {
     pub fn train() -> MultiTaskDataset {
         let mut dataset: Vec<Box<dyn PrefixedTranslationDataset>> = Vec::new();
 
-        dataset.push(Box::new(DbPediaClassificationDataset::train()));
-        dataset.push(Box::new(DbPediaWriteTitleDataset::train()));
-        // dataset.push(Box::new(C4DatasetPretrain::train()));
+        // dataset.push(Box::new(DbPediaClassificationDataset::train()));
+        // dataset.push(Box::new(DbPediaWriteTitleDataset::train()));
+        dataset.push(Box::new(C4DatasetPretrain::train()));
 
         Self::new(dataset)
     }
@@ -101,9 +101,9 @@ impl MultiTaskDataset {
     pub fn valid() -> MultiTaskDataset {
         let mut dataset: Vec<Box<dyn PrefixedTranslationDataset>> = Vec::new();
 
-        dataset.push(Box::new(DbPediaClassificationDataset::test()));
-        dataset.push(Box::new(DbPediaWriteTitleDataset::test()));
-        // dataset.push(Box::new(C4DatasetPretrain::test()));
+        // dataset.push(Box::new(DbPediaClassificationDataset::test()));
+        // dataset.push(Box::new(DbPediaWriteTitleDataset::test()));
+        dataset.push(Box::new(C4DatasetPretrain::test()));
 
         Self::new(dataset)
     }

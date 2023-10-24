@@ -11,13 +11,19 @@ pub struct C4Item {
 
 pub struct C4DatasetPretrain {
     dataset: SqliteDataset<C4Item>,
+    prefix: Option<String>,
 }
 
 impl Dataset<TextTranslationItem> for C4DatasetPretrain {
     fn get(&self, index: usize) -> Option<TextTranslationItem> {
         self.dataset.get(index).map(|item| {
             let (masked, inverse_mask) = mask_words(&item.text);
-            TextTranslationItem::new(masked, inverse_mask)
+            match &self.prefix {
+                Some(prefix) => {
+                    TextTranslationItem::new(format!("{} {}", prefix, masked), inverse_mask)
+                }
+                None => TextTranslationItem::new(masked, inverse_mask),
+            }
         })
     }
 
@@ -34,6 +40,11 @@ impl C4DatasetPretrain {
     pub fn test() -> Self {
         Self::new("validation")
     }
+
+    pub fn with_prefix(&mut self, prefix: String) {
+        self.prefix = Some(prefix);
+    }
+
     pub fn new(split: &str) -> Self {
         let dataset: SqliteDataset<C4Item> = HuggingfaceDatasetLoader::new("c4")
             .with_huggingface_cache_dir("/dataset")
@@ -41,6 +52,9 @@ impl C4DatasetPretrain {
             .with_base_dir("/datapool/burn_dataset")
             .dataset(split)
             .unwrap();
-        Self { dataset }
+        Self {
+            dataset,
+            prefix: None,
+        }
     }
 }

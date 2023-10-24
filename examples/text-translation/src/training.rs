@@ -1,5 +1,5 @@
 use crate::data::tokenizer::Tokenizer;
-use burn::{module::Module, train::metric::LearningRateMetric, LearningRate};
+use burn::{module::Module, train::metric::LearningRateMetric};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -11,7 +11,7 @@ use burn::{
         dataloader::DataLoaderBuilder,
         dataset::{transform::SamplerDataset, Dataset},
     },
-    lr_scheduler::noam::NoamLRSchedulerConfig,
+    lr_scheduler::noam::NoamLrSchedulerConfig,
     nn::transformer::{TransformerDecoderConfig, TransformerEncoderConfig},
     optim::AdamConfig,
     record::{CompactRecorder, DefaultRecorder, Recorder},
@@ -76,35 +76,30 @@ pub fn train<B: ADBackend, D: Dataset<TextTranslationItem> + 'static>(
         .batch_size(config.batch_size)
         .num_workers(4)
         .build(SamplerDataset::new(dataset_train, 100_000));
-    // TODO composeDataset ?
-    //.build(SamplerDataset::new(dataset_train, 500));
 
     let dataloader_valid = DataLoaderBuilder::new(batcher_valid)
         .batch_size(config.batch_size)
         .num_workers(4)
         .build(SamplerDataset::new(dataset_valid, 1_000));
-    // .build(SamplerDataset::new(dataset_valid, 10));
 
     let accum = 4;
     let optimizer = config.optimizer.init();
-    let lr_scheduler = NoamLRSchedulerConfig::new(1.0 / accum as f64)
+    let lr_scheduler = NoamLrSchedulerConfig::new(1.0 / accum as f64)
         .with_warmup_steps(10_000)
-        // .with_warmup_steps(60)
         .with_model_size(config.encoder.d_model)
         .init();
-    // let lr_scheduler: LearningRate = 1e-09;
 
     let mut learner = LearnerBuilder::new(artifact_dir)
         .metric_train(CUDAMetric::new())
         .metric_valid(CUDAMetric::new())
-        .metric_train_plot(AccuracyMetric::new().with_pad_token(tokenizer.pad_token()))
-        .metric_valid_plot(AccuracyMetric::new().with_pad_token(tokenizer.pad_token()))
-        .metric_train_plot(LossMetric::new())
-        .metric_valid_plot(LossMetric::new())
+        .metric_train_numeric(AccuracyMetric::new().with_pad_token(tokenizer.pad_token()))
+        .metric_valid_numeric(AccuracyMetric::new().with_pad_token(tokenizer.pad_token()))
+        .metric_train_numeric(LossMetric::new())
+        .metric_valid_numeric(LossMetric::new())
         .metric_train(LossMetric::new())
-        .metric_train_plot(LearningRateMetric::new())
-        .metric_valid_plot(LearningRateMetric::new())
-        .with_file_checkpointer(2, CompactRecorder::new())
+        .metric_train_numeric(LearningRateMetric::new())
+        .metric_valid_numeric(LearningRateMetric::new())
+        .with_file_checkpointer(CompactRecorder::new())
         .devices(devices)
         .grads_accumulation(accum)
         .num_epochs(config.num_epochs);

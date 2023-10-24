@@ -11,8 +11,7 @@
 
 use std::sync::Arc;
 
-use burn::optim::decay::WeightDecayConfig;
-use text_translation::{training::ExperimentConfig, DbPediaDataset, Gpt2Tokenizer};
+use text_translation::Gpt2Tokenizer;
 
 #[cfg(feature = "f16")]
 type Elem = burn::tensor::f16;
