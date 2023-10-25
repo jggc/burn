@@ -43,25 +43,6 @@ impl Dataset<DbPediaItem> for DbPediaDataset {
     }
 }
 
-/*
-impl Dataset<TextTranslationItem> for DbPediaDataset {
-    fn get(&self, index: usize) -> Option<TextTranslationItem> {
-        self.dataset.get(index).map(|item| {
-            let full_content = format!(
-                "Title: {} - Content: {} - Label : {}",
-                item.title, item.content, item.label
-            );
-            let (input, output) = split_string(&full_content, 1000);
-            TextTranslationItem::new(input, output)
-        })
-    }
-
-    fn len(&self) -> usize {
-        self.dataset.len()
-    }
-}
-*/
-
 impl DbPediaDataset {
     pub fn train() -> Self {
         Self::new("train")

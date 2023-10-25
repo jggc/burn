@@ -51,7 +51,7 @@ impl TextTranslationModelConfig {
         let embedding_pos = EmbeddingConfig::new(self.max_seq_length, self.encoder.d_model).init();
         let encoder = self.encoder.init();
         let decoder = self.decoder.init();
-        // TODO not sure about self.vocab_size in the output layer
+
         let output = LinearConfig::new(self.decoder.d_model, self.vocab_size).init();
 
         TextTranslationModel {
@@ -207,39 +207,6 @@ impl<B: Backend> TextTranslationModel<B> {
         let duration = Duration::as_millis(&(Instant::now() - start));
         println!("Inference took {duration} ");
         predictions
-        /*
-        let [batch_size, seq_length] = expected.dims();
-        // let seq_length = seq_length + 10; Nope, repeating token [START]
-        println!("expected dims batch_size {batch_size} seq length {seq_length}");
-        let index_positions = Tensor::arange_device(0..seq_length, device)
-            .reshape([1, seq_length])
-            .repeat(0, batch_size);
-
-        let embedding_positions = self.embedding_pos.forward(index_positions);
-        let embedding_tokens = self.embedding_token.forward(expected.clone());
-        let embedding = (embedding_positions + embedding_tokens) / 2;
-
-        let mask_attn = generate_autoregressive_mask::<B>(batch_size, seq_length, device);
-
-        let input = TransformerDecoderInput::new(embedding, memory);
-        //.target_mask_attn(mask_attn)
-        //.target_mask_pad(item.output_mask_pad)
-        //.memory_mask_pad(input_mask_pad);
-
-        let mut cache = self.decoder.new_autoregressive_cache();
-        let decoded = self
-            .decoder
-            .forward_autoregressive_inference(input, &mut cache);
-
-        let output = self.output.forward(decoded);
-        println!("shape after output layer {:?}", output.shape());
-        let output_flatten = output.reshape([batch_size * seq_length, self.vocab_size]);
-        println!("shape output_flatten {:?}", output_flatten.shape());
-
-        let probabilities = softmax(output_flatten, 1);
-        println!("shape probabilities {:?}", probabilities.shape());
-        probabilities.argmax(1)
-        */
     }
 }
 

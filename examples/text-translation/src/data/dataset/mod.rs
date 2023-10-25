@@ -25,23 +25,3 @@ pub struct TextTranslationItem {
     pub input: String,  // The input text
     pub output: String, // The expected output text
 }
-
-fn split_string(input_str: &str, max_length: usize) -> (String, String) {
-    let mut mid_index;
-
-    if input_str.len() <= max_length * 2 {
-        mid_index = input_str.len() / 2;
-    } else {
-        mid_index = max_length;
-    }
-
-    while !input_str.is_char_boundary(mid_index) {
-        mid_index += 1;
-    }
-
-    let (first_half, second_half) = input_str.split_at(mid_index);
-    (
-        first_half.to_string(),
-        second_half.chars().take(max_length).collect(),
-    )
-}

@@ -10,9 +10,7 @@ use burn::{
 };
 
 use crate::{
-    data::{tokenizer::BertCasedTokenizer, TextTranslationBatcher},
-    model::TextTranslationModelConfig,
-    training::ExperimentConfig,
+    data::TextTranslationBatcher, model::TextTranslationModelConfig, training::ExperimentConfig,
 };
 
 pub fn infer<B: Backend>(device: B::Device, artifact_dir: &str, tokenizer: Arc<dyn Tokenizer>) {
