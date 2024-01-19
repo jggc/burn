@@ -12,8 +12,8 @@ compatibility.
 
 For practical examples, please refer to:
 
-1. [ONNX Inference Example](https://github.com/burn-rs/burn/tree/main/examples/onnx-inference)
-2. [SqueezeNet Image Classification](https://github.com/burn-rs/models/tree/main/squeezenet-burn)
+1. [ONNX Inference Example](https://github.com/tracel-ai/burn/tree/main/examples/onnx-inference)
+2. [SqueezeNet Image Classification](https://github.com/tracel-ai/models/tree/main/squeezenet-burn)
 
 ## Usage
 
@@ -29,7 +29,7 @@ Follow these steps to import an ONNX model into your Burn project:
    fn main() {
        // Generate Rust code from the ONNX model file
        ModelGen::new()
-           .input("src/model/mnist.onnx")
+           .input("src/model/model_name.onnx")
            .out_dir("model/")
            .run_from_script();
    }
@@ -38,8 +38,8 @@ Follow these steps to import an ONNX model into your Burn project:
 2. **Modify `mod.rs`**: Add this code to the `mod.rs` file located in `src/model`:
 
    ```rust
-   pub mod mnist {
-       include!(concat!(env!("OUT_DIR"), "/model/mnist.rs"));
+   pub mod model_name {
+       include!(concat!(env!("OUT_DIR"), "/model/model_name.rs"));
    }
    ```
 
@@ -50,15 +50,15 @@ Follow these steps to import an ONNX model into your Burn project:
    mod model;
 
    use burn::tensor;
-   use burn_ndarray::NdArrayBackend;
-   use model::mnist::Model;
+   use burn_ndarray::NdArray;
+   use model::model_name::Model;
 
    fn main() {
        // Initialize a new model instance
-       let model: Model<NdArrayBackend<f32>> = Model::new();
+       let model: Model<NdArray<f32>> = Model::new();
 
        // Create a sample input tensor (zeros for demonstration)
-       let input = tensor::Tensor::<NdArrayBackend<f32>, 4>::zeros([1, 1, 28, 28]);
+       let input = tensor::Tensor::<NdArray<f32>, 4>::zeros([1, 1, 28, 28]);
 
        // Execute the model
        let output = model.forward(input);

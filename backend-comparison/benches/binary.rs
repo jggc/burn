@@ -1,49 +1,48 @@
-use std::marker::PhantomData;
-
+use backend_comparison::persistence::save;
 use burn::tensor::{backend::Backend, Distribution, Shape, Tensor};
-use burn_tensor::benchmark::{run_benchmark, Benchmark};
+use burn_common::benchmark::{run_benchmark, Benchmark};
 
 pub struct BinaryBenchmark<B: Backend, const D: usize> {
     shape: Shape<D>,
-    num_repeats: usize,
-    backend: PhantomData<B>,
+    device: B::Device,
 }
 
-impl<B: Backend, const D: usize> Benchmark<B> for BinaryBenchmark<B, D> {
+impl<B: Backend, const D: usize> Benchmark for BinaryBenchmark<B, D> {
     type Args = (Tensor<B, D>, Tensor<B, D>);
 
     fn name(&self) -> String {
-        "Binary Ops".into()
+        "binary".into()
+    }
+
+    fn shapes(&self) -> Vec<Vec<usize>> {
+        vec![self.shape.dims.into()]
     }
 
     fn execute(&self, (lhs, rhs): Self::Args) {
-        for _ in 0..self.num_repeats {
-            // Choice of add is arbitrary
-            B::add(lhs.clone().into_primitive(), rhs.clone().into_primitive());
-        }
+        // Choice of add is arbitrary
+        B::add(lhs.clone().into_primitive(), rhs.clone().into_primitive());
     }
 
-    fn prepare(&self, device: &B::Device) -> Self::Args {
-        let lhs = Tensor::random(self.shape.clone(), Distribution::Default).to_device(device);
-        let rhs = Tensor::random(self.shape.clone(), Distribution::Default).to_device(device);
+    fn prepare(&self) -> Self::Args {
+        let lhs = Tensor::random(self.shape.clone(), Distribution::Default, &self.device);
+        let rhs = Tensor::random(self.shape.clone(), Distribution::Default, &self.device);
 
         (lhs, rhs)
+    }
+
+    fn sync(&self) {
+        B::sync(&self.device)
     }
 }
 
 #[allow(dead_code)]
 fn bench<B: Backend>(device: &B::Device) {
-    const D: usize = 3;
-    let shape: Shape<D> = [32, 512, 1024].into();
-    let num_repeats = 10;
-
-    let benchmark = BinaryBenchmark::<B, D> {
-        shape,
-        num_repeats,
-        backend: PhantomData,
+    let benchmark = BinaryBenchmark::<B, 3> {
+        shape: [32, 512, 1024].into(),
+        device: device.clone(),
     };
 
-    run_benchmark(benchmark, device)
+    save::<B>(vec![run_benchmark(benchmark)], device).unwrap();
 }
 
 fn main() {

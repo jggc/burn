@@ -1,14 +1,15 @@
+use super::{codegen::ModuleCodegen, record_struct::StructModuleRecordCodegen};
 use crate::shared::field::{parse_fields, FieldTypeAnalyzer};
 use proc_macro2::{Ident, TokenStream};
 use quote::quote;
-
-use super::codegen::ModuleCodegen;
 
 pub(crate) struct StructModuleCodegen {
     pub fields: Vec<FieldTypeAnalyzer>,
 }
 
 impl ModuleCodegen for StructModuleCodegen {
+    type RecordCodegen = StructModuleRecordCodegen;
+
     fn gen_num_params(&self) -> TokenStream {
         let body = self.gen_fields_fn(|name| {
             quote! {
@@ -33,8 +34,63 @@ impl ModuleCodegen for StructModuleCodegen {
         });
 
         quote! {
-            fn visit<V: burn::module::ModuleVisitor<B>>(&self, visitor: &mut V) {
+            fn visit<Visitor: burn::module::ModuleVisitor<B>>(&self, visitor: &mut Visitor) {
                 #body
+            }
+        }
+    }
+
+    fn gen_collect_devices(&self) -> TokenStream {
+        let body = self.gen_fields_fn(|name| {
+            quote! {
+                let devices = burn::module::Module::<B>::collect_devices(&self.#name, devices);
+            }
+        });
+
+        quote! {
+            fn collect_devices(
+                &self,
+                devices: burn::module::Devices<B>
+            ) -> burn::module::Devices<B> {
+                #body
+
+                devices
+            }
+        }
+    }
+
+    fn gen_to_device(&self) -> TokenStream {
+        let (names, body) = self.gen_fields_fn_names(|name| {
+            quote! {
+                let #name = burn::module::Module::<B>::to_device(self.#name, device);
+            }
+        });
+
+        quote! {
+            fn to_device(self, device: &B::Device) -> Self {
+                #body
+
+                Self {
+                    #(#names),*
+                }
+            }
+        }
+    }
+
+    fn gen_fork(&self) -> TokenStream {
+        let (names, body) = self.gen_fields_fn_names(|name| {
+            quote! {
+                let #name = burn::module::Module::<B>::fork(self.#name, device);
+            }
+        });
+
+        quote! {
+            fn fork(self, device: &B::Device) -> Self {
+                #body
+
+                Self {
+                    #(#names),*
+                }
             }
         }
     }
@@ -42,12 +98,12 @@ impl ModuleCodegen for StructModuleCodegen {
     fn gen_map(&self) -> TokenStream {
         let (names, body) = self.gen_fields_fn_names(|name| {
             quote! {
-                let #name = burn::module::Module::map(self.#name, mapper);
+                let #name = burn::module::Module::<B>::map(self.#name, mapper);
             }
         });
 
         quote! {
-            fn map<M: burn::module::ModuleMapper<B>>(self, mapper: &mut M) -> Self {
+            fn map<Mapper: burn::module::ModuleMapper<B>>(self, mapper: &mut Mapper) -> Self {
                 #body
 
                 Self {
@@ -60,7 +116,7 @@ impl ModuleCodegen for StructModuleCodegen {
     fn gen_valid(&self) -> TokenStream {
         let (names, body) = self.gen_fields_fn_names(|name| {
             quote! {
-                let #name = burn::module::ADModule::<B>::valid(&self.#name);
+                let #name = burn::module::AutodiffModule::<B>::valid(&self.#name);
             }
         });
 
@@ -123,6 +179,10 @@ impl ModuleCodegen for StructModuleCodegen {
                 }
             }
         }
+    }
+
+    fn record_codegen(self) -> Self::RecordCodegen {
+        StructModuleRecordCodegen::new(self.fields)
     }
 }
 

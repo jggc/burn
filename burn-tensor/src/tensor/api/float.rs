@@ -1,7 +1,6 @@
 use alloc::vec::Vec;
 use core::convert::TryInto;
 
-use crate::backend::ADBackend;
 use crate::check;
 use crate::check::TensorCheck;
 use crate::tensor::backend::Backend;
@@ -25,7 +24,7 @@ where
     /// want to mutate a tensor by using owned operations. A plausible usage would be to
     /// update the weights of a mutable model reference.
     pub fn inplace<F: FnOnce(Self) -> Self>(&mut self, func: F) {
-        let mut tensor_owned = Tensor::empty([0; D]);
+        let mut tensor_owned = Tensor::empty([0; D], &self.device());
         core::mem::swap(&mut tensor_owned, self);
 
         let mut tensor_new = func(tensor_owned);
@@ -67,6 +66,11 @@ where
         Self::new(B::powf(self.primitive, value))
     }
 
+    /// Applies element wise reciprocal operation.
+    pub fn recip(self) -> Self {
+        Self::new(B::recip(self.primitive))
+    }
+
     /// Applies element wise root square operation.
     pub fn sqrt(self) -> Self {
         Self::new(B::sqrt(self.primitive))
@@ -87,7 +91,7 @@ where
         Self::new(B::tanh(self.primitive))
     }
 
-    /// Create a tensor from floats (f32).
+    /// Create a tensor from floats (f32) on a given device.
     ///
     /// # Example
     ///
@@ -96,12 +100,13 @@ where
     /// use burn_tensor::Tensor;
     ///
     /// fn example<B: Backend>() {
-    ///     let _ = Tensor::<B, 1>::from_floats([1.0, 2.0]);
-    ///     let _ = Tensor::<B, 2>::from_floats([[1.0, 2.0], [3.0, 4.0]]);
+    ///     let device = B::Device::default();
+    ///     let _ = Tensor::<B, 1>::from_floats([1.0, 2.0], &device);
+    ///     let _ = Tensor::<B, 2>::from_floats([[1.0, 2.0], [3.0, 4.0]], &device);
     /// }
     /// ```
-    pub fn from_floats<A: Into<Data<f32, D>>>(floats: A) -> Self {
-        Self::from_data(floats.into().convert())
+    pub fn from_floats<A: Into<Data<f32, D>>>(floats: A, device: &B::Device) -> Self {
+        Self::from_data(floats.into().convert(), device)
     }
 
     /// Returns a new tensor with the same shape and device as the current tensor and the data
@@ -114,7 +119,8 @@ where
     /// use burn_tensor::Tensor;
     ///
     /// fn example<B: Backend>() {
-    ///     let float_tensor = Tensor::<B, 1>::from_floats([1.0, 2.0]);
+    ///     let device = Default::default();
+    ///     let float_tensor = Tensor::<B, 1>::from_floats([1.0, 2.0], &device);
     ///     let int_tensor = float_tensor.int();
     /// }
     /// ```
@@ -134,7 +140,7 @@ where
 
     /// Returns a new tensor with the same shape and device as the current tensor filled random
     /// values sampled from the given distribution.
-    pub fn random_like(&self, distribution: Distribution<B::FloatElem>) -> Self {
+    pub fn random_like(&self, distribution: Distribution) -> Self {
         Tensor::new(B::random(self.shape(), distribution, &self.device()))
     }
 
@@ -147,21 +153,24 @@ where
     /// use burn_tensor::Tensor;
     ///
     /// fn example<B: Backend>() {
-    ///     let one_hot = Tensor::<B, 1>::one_hot(2, 10);
+    ///     let device = Default::default();
+    ///     let one_hot = Tensor::<B, 1>::one_hot(2, 10, &device);
     ///     println!("{}", one_hot.to_data());
     ///     // [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     /// }
     /// ```
-    pub fn one_hot(index: usize, num_classes: usize) -> Self {
+    pub fn one_hot(index: usize, num_classes: usize, device: &B::Device) -> Self {
+        check!(TensorCheck::one_hot(index, num_classes));
+
         let mut dims = [1; D];
         dims[D - 1] = num_classes;
         let shape = Shape::new(dims);
         let ranges: Vec<_> = shape.dims.iter().map(|dim| 0..*dim).collect();
-        let tensor = Tensor::zeros(shape);
+        let tensor = Tensor::zeros(shape, device);
         let mut ranges: [core::ops::Range<usize>; D] = ranges.try_into().unwrap();
         ranges[D - 1] = index..index + 1;
 
-        tensor.slice_assign(ranges, Tensor::ones(Shape::new([1; D])))
+        tensor.slice_assign(ranges, Tensor::ones(Shape::new([1; D]), device))
     }
 
     /// Applies the matrix multiplication operation.
@@ -200,18 +209,11 @@ where
         (var, mean)
     }
 
-    /// Create a random tensor of the given shape where each element is sampled from the given
-    /// distribution.
-    pub fn random<S: Into<Shape<D>>>(shape: S, distribution: Distribution<B::FloatElem>) -> Self {
-        let tensor = B::random(shape.into(), distribution, &B::Device::default());
-        Self::new(tensor)
-    }
-
     /// Create a random tensor of the given shape on the given device where each element is
     /// sampled from the given distribution.
-    pub fn random_device<S: Into<Shape<D>>>(
+    pub fn random<S: Into<Shape<D>>>(
         shape: S,
-        distribution: Distribution<B::FloatElem>,
+        distribution: Distribution,
         device: &B::Device,
     ) -> Self {
         let tensor = B::random(shape.into(), distribution, device);
@@ -228,6 +230,7 @@ where
     }
 
     /// Detach the current tensor from the autodiff graph.
+    ///
     /// This function does nothing when autodiff is not enabled.
     /// This can be used in batchers or elsewhere to ensure that previous operations are not
     /// considered in the autodiff graph.
@@ -236,6 +239,7 @@ where
     }
 
     /// Mark the tensor to keep gradients during the backward pass.
+    ///
     /// This function does nothing when autodiff is not enabled.
     pub fn require_grad(self) -> Self {
         self.set_require_grad(true)
@@ -273,50 +277,5 @@ where
             .transpose()
             .matmul(centered)
             .div_scalar(n as f32 - correction_factor as f32)
-    }
-}
-
-impl<const D: usize, B: ADBackend> Tensor<B, D> {
-    /// Backward pass of the tensor.
-    pub fn backward(&self) -> B::Gradients {
-        B::backward::<D>(self.primitive.clone())
-    }
-
-    /// Get the gradients of a tensor if it exist.
-    ///
-    /// Returns a new reference to the same tensor. Therefore the same grad tensor can
-    /// be accessed multiple times. If you only need to get the gradients one time,
-    /// consider using [grad_remove](Tensor::grad_remove) for better performance.
-    pub fn grad(&self, grads: &B::Gradients) -> Option<Tensor<B::InnerBackend, D>> {
-        B::grad(&self.primitive, grads).map(Tensor::new)
-    }
-
-    /// Remove the grad tensor from the [grads](ADBackend::Gradients) struct returning the result.
-    pub fn grad_remove(&self, grads: &mut B::Gradients) -> Option<Tensor<B::InnerBackend, D>> {
-        B::grad_remove(&self.primitive, grads).map(Tensor::new)
-    }
-
-    /// Replace the grad tensor from the [grads](ADBackend::Gradients) struct with the provided
-    /// gradient.
-    pub fn grad_replace(&self, grads: &mut B::Gradients, grad: Tensor<B::InnerBackend, D>) {
-        B::grad_replace(&self.primitive, grads, grad.primitive);
-    }
-
-    /// Returns the inner tensor without the autodiff information.
-    pub fn inner(self) -> Tensor<B::InnerBackend, D> {
-        Tensor::new(B::inner(self.primitive))
-    }
-
-    /// Convert a tensor to the autodiff backend.
-    ///
-    /// # Arguments
-    ///
-    /// * `inner` - The tensor to convert.
-    ///
-    /// # Returns
-    ///
-    /// The tensor converted to the autodiff backend.
-    pub fn from_inner(inner: Tensor<B::InnerBackend, D>) -> Self {
-        Self::new(B::from_inner(inner.primitive))
     }
 }

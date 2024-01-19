@@ -4,7 +4,7 @@ use burn_tensor::{Element, Shape};
 
 use crate::{
     element::WgpuElement,
-    kernel::{slice, slice_assign},
+    kernel::{slice_assign, slice_on_output},
     ops::numeric::zeros_device,
     tensor::WgpuTensor,
 };
@@ -83,20 +83,22 @@ fn padding<E: WgpuElement + Element, const D: usize>(
 /// Crops tensor by deleting values when cropped dim is smaller than tensor dim
 pub(super) fn crop<E: WgpuElement, const D: usize>(
     tensor: WgpuTensor<E, D>,
-    cropped_shape: Shape<D>,
+    output: WgpuTensor<E, D>,
 ) -> WgpuTensor<E, D> {
-    let ranges = cropped_shape
+    let ranges = output
+        .shape
         .dims
         .iter()
         .map(|dim| 0..*dim)
         .collect::<Vec<Range<usize>>>()
         .try_into()
         .unwrap();
-    slice::<E, D, D>(tensor, ranges)
+    slice_on_output::<E, D, D>(tensor, output, ranges)
 }
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::tests::TestTensor;
 
@@ -106,7 +108,11 @@ mod tests {
         let row_divisor = 5;
         let col = 12;
         let col_divisor = 3;
-        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default);
+        let tensor = TestTensor::random(
+            [row, col],
+            burn_tensor::Distribution::Default,
+            &Default::default(),
+        );
         let expected_shape = [row, col].into();
 
         let padded = pad_round(tensor.into_primitive(), row_divisor, col_divisor).into_tensor();
@@ -120,7 +126,11 @@ mod tests {
         let row_divisor = 5;
         let col = 12;
         let col_divisor = 3;
-        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default);
+        let tensor = TestTensor::random(
+            [row, col],
+            burn_tensor::Distribution::Default,
+            &Default::default(),
+        );
 
         let padded = pad_round(tensor.clone().into_primitive(), row_divisor, col_divisor);
 
@@ -134,7 +144,11 @@ mod tests {
         let row_divisor = 6;
         let col = 12;
         let col_divisor = 5;
-        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default);
+        let tensor = TestTensor::random(
+            [row, col],
+            burn_tensor::Distribution::Default,
+            &Default::default(),
+        );
         let expected_shape = [12, 15].into();
 
         let padded = pad_round(tensor.into_primitive(), row_divisor, col_divisor).into_tensor();
@@ -148,7 +162,11 @@ mod tests {
         let row_divisor = 6;
         let col = 12;
         let col_divisor = 5;
-        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default);
+        let tensor = TestTensor::random(
+            [row, col],
+            burn_tensor::Distribution::Default,
+            &Default::default(),
+        );
 
         let padded =
             pad_round(tensor.clone().into_primitive(), row_divisor, col_divisor).into_tensor();
@@ -168,7 +186,11 @@ mod tests {
         let row_divisor = 6;
         let col = 12;
         let col_divisor = 5;
-        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default);
+        let tensor = TestTensor::random(
+            [row, col],
+            burn_tensor::Distribution::Default,
+            &Default::default(),
+        );
 
         let padded = pad_round(tensor.into_primitive(), row_divisor, col_divisor).into_tensor();
         let padded = TestTensor::from_primitive(padded).to_data();
@@ -193,7 +215,11 @@ mod tests {
         let row_divisor = 4;
         let col = 12;
         let col_divisor = 5;
-        let tensor = TestTensor::random([2, 3, row, col], burn_tensor::Distribution::Default);
+        let tensor = TestTensor::random(
+            [2, 3, row, col],
+            burn_tensor::Distribution::Default,
+            &Default::default(),
+        );
         let expected_shape = [2, 3, 12, 15].into();
 
         let padded = pad_round(tensor.into_primitive(), row_divisor, col_divisor).into_tensor();
@@ -207,7 +233,11 @@ mod tests {
         let row_divisor = 32;
         let col = 4;
         let col_divisor = 3;
-        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default);
+        let tensor = TestTensor::random(
+            [row, col],
+            burn_tensor::Distribution::Default,
+            &Default::default(),
+        );
         let expected_shape = [row_divisor, 2 * col_divisor].into();
 
         let padded = pad_round(tensor.into_primitive(), row_divisor, col_divisor).into_tensor();
@@ -221,7 +251,11 @@ mod tests {
         let row_divisor = 32;
         let col = 4;
         let col_divisor = 64;
-        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default);
+        let tensor = TestTensor::random(
+            [row, col],
+            burn_tensor::Distribution::Default,
+            &Default::default(),
+        );
         let expected_shape = [32, 64].into();
 
         let padded = pad_round(tensor.into_primitive(), row_divisor, col_divisor).into_tensor();
@@ -233,10 +267,14 @@ mod tests {
     fn crop_same_shape_should_be_unchanged_shape() {
         let row = 10;
         let col = 12;
-        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default);
+        let device = Default::default();
+        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default, &device);
         let expected_shape = [row, col].into();
 
-        let unpadded = crop(tensor.into_primitive(), [row, col].into());
+        let unpadded = crop(
+            tensor.clone().into_primitive(),
+            TestTensor::empty([row, col], &device).into_primitive(),
+        );
 
         assert!(unpadded.shape == expected_shape);
     }
@@ -245,9 +283,13 @@ mod tests {
     fn crop_same_shape_should_have_unchanged_values() {
         let row = 10;
         let col = 12;
-        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default);
+        let device = Default::default();
+        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default, &device);
 
-        let unpadded = crop(tensor.clone().into_primitive(), [row, col].into());
+        let unpadded = crop(
+            tensor.clone().into_primitive(),
+            TestTensor::empty([row, col], &device).into_primitive(),
+        );
 
         let unpadded = TestTensor::from_primitive(unpadded).to_data();
         let tensor = tensor.into_data();
@@ -264,10 +306,14 @@ mod tests {
         let keep_rows = 8;
         let col = 12;
         let keep_cols = 10;
-        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default);
+        let device = Default::default();
+        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default, &device);
         let expected_shape = [keep_rows, keep_cols].into();
 
-        let unpadded = crop(tensor.into_primitive(), [keep_rows, keep_cols].into());
+        let unpadded = crop(
+            tensor.clone().into_primitive(),
+            TestTensor::empty([keep_rows, keep_cols], &device).into_primitive(),
+        );
 
         assert!(unpadded.shape == expected_shape);
     }
@@ -278,11 +324,12 @@ mod tests {
         let keep_rows = 3;
         let col = 4;
         let keep_cols = 3;
-        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default);
+        let device = Default::default();
+        let tensor = TestTensor::random([row, col], burn_tensor::Distribution::Default, &device);
 
         let unpadded = crop(
             tensor.clone().into_primitive(),
-            [keep_rows, keep_cols].into(),
+            TestTensor::empty([keep_rows, keep_cols], &device).into_primitive(),
         );
 
         let unpadded = TestTensor::from_primitive(unpadded).to_data();

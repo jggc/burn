@@ -1,11 +1,11 @@
 # Burn Torch Backend
 
-[Burn](https://github.com/burn-rs/burn) Torch backend
+[Burn](https://github.com/tracel-ai/burn) Torch backend
 
 [![Current Crates.io Version](https://img.shields.io/crates/v/burn-tch.svg)](https://crates.io/crates/burn-tch)
-[![license](https://shields.io/badge/license-MIT%2FApache--2.0-blue)](https://github.com/burn-rs/burn-tch/blob/master/README.md)
+[![license](https://shields.io/badge/license-MIT%2FApache--2.0-blue)](https://github.com/tracel-ai/burn-tch/blob/master/README.md)
 
-This crate provides a Torch backend for [Burn](https://github.com/burn-rs/burn) utilizing the
+This crate provides a Torch backend for [Burn](https://github.com/tracel-ai/burn) utilizing the
 [tch-rs](https://github.com/LaurentMazare/tch-rs) crate, which offers a Rust interface to the
 [PyTorch](https://pytorch.org/) C++ API.
 
@@ -17,29 +17,38 @@ The backend supports CPU (multithreaded), [CUDA](https://pytorch.org/docs/stable
 ```rust
 #[cfg(feature = "tch-gpu")]
 mod tch_gpu {
-    use burn_autodiff::ADBackendDecorator;
-    use burn_tch::{TchBackend, TchDevice};
+    use burn_autodiff::Autodiff;
+    use burn_tch::{LibTorch, LibTorchDevice};
     use mnist::training;
 
     pub fn run() {
         #[cfg(not(target_os = "macos"))]
-        let device = TchDevice::Cuda(0);
+        let device = LibTorchDevice::Cuda(0);
         #[cfg(target_os = "macos")]
-        let device = TchDevice::Mps;
+        let device = LibTorchDevice::Mps;
 
-        training::run::<ADBackendDecorator<TchBackend<f32>>>(device);
+        training::run::<Autodiff<LibTorch<f32>>>(device);
     }
 }
 
 #[cfg(feature = "tch-cpu")]
 mod tch_cpu {
-    use burn_autodiff::ADBackendDecorator;
-    use burn_tch::{TchBackend, TchDevice};
+    use burn_autodiff::Autodiff;
+    use burn_tch::{LibTorch, LibTorchDevice};
     use mnist::training;
 
     pub fn run() {
-        let device = TchDevice::Cpu;
-        training::run::<ADBackendDecorator<TchBackend<f32>>>(device);
+        let device = LibTorchDevice::Cpu;
+        training::run::<Autodiff<LibTorch<f32>>>(device);
     }
 }
 ```
+
+### Platform Support
+
+| Option | CPU | GPU | Linux | MacOS | Windows | Android | iOS | WASM |
+| :----- | :-: | :-: | :---: | :---: | :-----: | :-----: | :-: | :--: |
+| CPU    | Yes | No  |  Yes  |  Yes  |   Yes   |   Yes   | Yes |  No  |
+| CUDA   | No  | Yes |  Yes  |  No   |   Yes   |   No    | No  |  No  |
+| MPS    | No  | Yes |  No   |  Yes  |   No    |   No    | No  |  No  |
+| Vulkan | Yes | Yes |  Yes  |  Yes  |   Yes   |   Yes   | No  |  No  |

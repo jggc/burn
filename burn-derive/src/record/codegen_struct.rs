@@ -23,18 +23,20 @@ impl RecordItemCodegen for StructRecordItemCodegen {
                 /// Field to be serialized.
                 pub #name: <#ty as burn::record::Record>::Item<S>,
             });
-            bounds.extend(quote!{
-                <#ty as burn::record::Record>::Item<S>: serde::Serialize + serde::de::DeserializeOwned,
-            });
+            bounds.extend(quote! {
+          <#ty as burn::record::Record>::Item<S>: burn::serde::Serialize + burn::serde::de::DeserializeOwned,
+      });
         }
         let bound = bounds.to_string();
 
+        let (generics, _, generics_where) = generics.split_for_impl();
         quote! {
 
             /// The record item type for the module.
-            #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+            #[derive(burn::serde::Serialize, burn::serde::Deserialize)]
+            #[serde(crate = "burn::serde")]
             #[serde(bound = #bound)]
-            pub struct #item_name #generics {
+            pub struct #item_name #generics #generics_where {
                 #fields
             }
         }

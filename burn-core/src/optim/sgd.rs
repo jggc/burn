@@ -1,5 +1,5 @@
 use crate::grad_clipping::GradientClippingConfig;
-use crate::module::ADModule;
+use crate::module::AutodiffModule;
 use crate::{self as burn, LearningRate};
 
 use super::decay::{WeightDecay, WeightDecayConfig};
@@ -9,7 +9,7 @@ use crate::config::Config;
 use crate::optim::adaptor::OptimizerAdaptor;
 use crate::record::Record;
 use crate::tensor::Tensor;
-use burn_tensor::backend::{ADBackend, Backend};
+use burn_tensor::backend::{AutodiffBackend, Backend};
 
 /// Configuration to create the [Sgd](Sgd) optimizer.
 #[derive(Config)]
@@ -38,7 +38,7 @@ pub struct SgdState<B: Backend, const D: usize> {
 
 impl SgdConfig {
     /// Creates a new [SgdConfig](SgdConfig) with default values.
-    pub fn init<B: ADBackend, M: ADModule<B>>(
+    pub fn init<B: AutodiffBackend, M: AutodiffModule<B>>(
         &self,
     ) -> OptimizerAdaptor<Sgd<B::InnerBackend>, M, B> {
         let momentum = self.momentum.as_ref().map(Momentum::new);
@@ -101,16 +101,17 @@ mod tests {
         nn::{Linear, LinearConfig},
         optim::{GradientsParams, Optimizer},
         tensor::{Distribution, Shape},
-        TestADBackend, TestBackend,
+        TestAutodiffBackend, TestBackend,
     };
 
     const LEARNING_RATE: LearningRate = 0.02;
 
     #[test]
     fn with_updated_params_should_have_state() {
-        let layer = layer();
+        let device = Default::default();
+        let layer = layer::<TestAutodiffBackend>(&device);
         let mut optim = sgd_with_all();
-        let loss = layer.forward(random_tensor());
+        let loss = layer.forward(random_tensor::<TestAutodiffBackend>(&device));
         let grads = loss.backward();
         let grads = GradientsParams::from_grads(grads, &layer);
         let _layer = optim.step(LEARNING_RATE, layer, grads);
@@ -135,9 +136,10 @@ mod tests {
 
     #[test]
     fn should_load_state() {
-        let layer = layer();
+        let device = Default::default();
+        let layer = layer::<TestAutodiffBackend>(&device);
         let mut optim = sgd_with_all();
-        let loss = layer.forward(random_tensor());
+        let loss = layer.forward(random_tensor(&device));
         let grads = loss.backward();
         let grads = GradientsParams::from_grads(grads, &layer);
         let _layer = optim.step(LEARNING_RATE, layer, grads);
@@ -152,15 +154,16 @@ mod tests {
         assert_eq!(record.len(), state_restored.len());
     }
 
-    fn random_tensor() -> Tensor<TestADBackend, 2> {
-        Tensor::<TestADBackend, 2>::random(Shape::new([2, 20]), Distribution::Default)
+    fn random_tensor<B: Backend>(device: &B::Device) -> Tensor<B, 2> {
+        Tensor::<B, 2>::random(Shape::new([2, 20]), Distribution::Default, device)
     }
 
-    fn layer() -> Linear<TestADBackend> {
-        LinearConfig::new(20, 20).with_bias(true).init()
+    fn layer<B: Backend>(device: &B::Device) -> Linear<B> {
+        LinearConfig::new(20, 20).with_bias(true).init(device)
     }
 
-    fn sgd_with_all() -> OptimizerAdaptor<Sgd<TestBackend>, Linear<TestADBackend>, TestADBackend> {
+    fn sgd_with_all(
+    ) -> OptimizerAdaptor<Sgd<TestBackend>, Linear<TestAutodiffBackend>, TestAutodiffBackend> {
         SgdConfig {
             weight_decay: Some(WeightDecayConfig { penalty: 0.05 }),
             momentum: Some(MomentumConfig {

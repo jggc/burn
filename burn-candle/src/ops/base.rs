@@ -4,22 +4,10 @@ use burn_tensor::{backend::Backend, Data, Reader, Shape};
 
 use crate::{
     element::{CandleElement, FloatCandleElement, IntCandleElement},
-    CandleBackend, CandleDevice, CandleTensor,
+    Candle, CandleDevice, CandleTensor,
 };
 
 use super::tensor;
-
-pub type FloatElem<B> = <B as Backend>::FloatElem;
-pub type Device<B> = <B as Backend>::Device;
-
-pub type FloatTensor<B, const D: usize> = <B as Backend>::TensorPrimitive<D>;
-
-pub type FullPrecisionBackend<B> = <B as Backend>::FullPrecisionBackend;
-
-pub type IntElem<B> = <B as Backend>::IntElem;
-pub type IntTensor<B, const D: usize> = <B as Backend>::IntTensorPrimitive<D>;
-
-pub type BoolTensor<B, const D: usize> = <B as Backend>::BoolTensorPrimitive<D>;
 
 pub fn cat<E: CandleElement, const D: usize>(
     tensors: Vec<CandleTensor<E, D>>,
@@ -98,5 +86,33 @@ pub fn slice_assign<E: CandleElement, const D1: usize, const D2: usize>(
     ranges: [std::ops::Range<usize>; D2],
     value: CandleTensor<E, D1>,
 ) -> CandleTensor<E, D1> {
-    panic!("slice_assign not supported by Candle")
+    CandleTensor::new(tensor.tensor.slice_assign(&ranges, &value.tensor).unwrap())
+}
+
+pub fn narrow<E: CandleElement, const D: usize>(
+    tensor: CandleTensor<E, D>,
+    dim: usize,
+    start: usize,
+    length: usize,
+) -> CandleTensor<E, D> {
+    let tensor = tensor.tensor.narrow(dim, start, length);
+    match tensor {
+        Ok(tensor) => CandleTensor::new(tensor),
+        Err(e) => panic!("error narrow from Candle"),
+    }
+}
+
+pub fn chunk<E: CandleElement, const D: usize>(
+    tensor: CandleTensor<E, D>,
+    chunks: usize,
+    dim: usize,
+) -> Vec<CandleTensor<E, D>> {
+    let tensors = tensor.tensor.chunk(chunks, dim);
+    match tensors {
+        Ok(tensors) => tensors
+            .into_iter()
+            .map(|tensor| CandleTensor::new(tensor))
+            .collect(),
+        Err(e) => panic!("error chunk from Candle"),
+    }
 }

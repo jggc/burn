@@ -2,12 +2,15 @@ use std::ops::Range;
 
 use burn_tensor::{backend::Backend, ops::IntTensorOps, Data, Reader, Shape};
 
-use crate::{element::TchElement, TchBackend, TchDevice, TchShape, TchTensor};
+use crate::{element::TchElement, LibTorch, LibTorchDevice, TchShape, TchTensor};
 
 use super::TchOps;
 
-impl<E: TchElement> IntTensorOps<TchBackend<E>> for TchBackend<E> {
-    fn int_from_data<const D: usize>(data: Data<i64, D>, device: &TchDevice) -> TchTensor<i64, D> {
+impl<E: TchElement> IntTensorOps<Self> for LibTorch<E> {
+    fn int_from_data<const D: usize>(
+        data: Data<i64, D>,
+        device: &LibTorchDevice,
+    ) -> TchTensor<i64, D> {
         TchTensor::from_data(data, (*device).into())
     }
 
@@ -33,7 +36,7 @@ impl<E: TchElement> IntTensorOps<TchBackend<E>> for TchBackend<E> {
 
     fn int_to_device<const D: usize>(
         tensor: TchTensor<i64, D>,
-        device: &TchDevice,
+        device: &LibTorchDevice,
     ) -> TchTensor<i64, D> {
         TchTensor::new(tensor.tensor.to((*device).into()))
     }
@@ -45,13 +48,13 @@ impl<E: TchElement> IntTensorOps<TchBackend<E>> for TchBackend<E> {
         TchOps::reshape(tensor, shape)
     }
 
-    fn int_device<const D: usize>(tensor: &TchTensor<i64, D>) -> TchDevice {
+    fn int_device<const D: usize>(tensor: &TchTensor<i64, D>) -> LibTorchDevice {
         tensor.tensor.device().into()
     }
 
     fn int_empty<const D: usize>(
         shape: Shape<D>,
-        device: &<TchBackend<E> as Backend>::Device,
+        device: &<LibTorch<E> as Backend>::Device,
     ) -> TchTensor<i64, D> {
         let tensor = tch::Tensor::empty(
             shape.dims.map(|a| a as i64),
@@ -187,17 +190,30 @@ impl<E: TchElement> IntTensorOps<TchBackend<E>> for TchBackend<E> {
         lhs: TchTensor<i64, D>,
         rhs: TchTensor<i64, D>,
     ) -> TchTensor<i64, D> {
-        TchOps::div(lhs, rhs)
+        let copy = false;
+        let non_blocking = true;
+        let lhs: TchTensor<f64, D> =
+            TchTensor::new(lhs.tensor.to_dtype(tch::Kind::Float, non_blocking, copy));
+        let rhs: TchTensor<f64, D> =
+            TchTensor::new(rhs.tensor.to_dtype(tch::Kind::Float, non_blocking, copy));
+
+        let out = TchOps::div(lhs, rhs);
+
+        TchTensor::<i64, D>::new(out.tensor.to_dtype(tch::Kind::Int64, non_blocking, copy))
     }
 
     fn int_div_scalar<const D: usize>(lhs: TchTensor<i64, D>, rhs: i64) -> TchTensor<i64, D> {
+        let copy = false;
+        let non_blocking = true;
         let lhs: TchTensor<f64, D> =
-            TchTensor::new(lhs.tensor.to_dtype(tch::Kind::Float, true, false));
-        let output: TchTensor<i64, D> = lhs.unary_ops(
+            TchTensor::new(lhs.tensor.to_dtype(tch::Kind::Float, non_blocking, copy));
+
+        let out: TchTensor<f64, D> = lhs.unary_ops(
             |mut tensor| tensor.f_div_scalar_(rhs).unwrap(),
             |tensor| tensor.f_div_scalar(rhs).unwrap(),
         );
-        TchTensor::<i64, D>::new(output.tensor.to_dtype(tch::Kind::Int64, true, false))
+
+        TchTensor::<i64, D>::new(out.tensor.to_dtype(tch::Kind::Int64, non_blocking, copy))
     }
 
     fn int_neg<const D: usize>(tensor: TchTensor<i64, D>) -> TchTensor<i64, D> {
@@ -206,7 +222,7 @@ impl<E: TchElement> IntTensorOps<TchBackend<E>> for TchBackend<E> {
 
     fn int_zeros<const D: usize>(
         shape: Shape<D>,
-        device: &<TchBackend<E> as Backend>::Device,
+        device: &<LibTorch<E> as Backend>::Device,
     ) -> TchTensor<i64, D> {
         let shape = TchShape::from(shape);
         let device: tch::Device = (*device).into();
@@ -216,7 +232,7 @@ impl<E: TchElement> IntTensorOps<TchBackend<E>> for TchBackend<E> {
 
     fn int_ones<const D: usize>(
         shape: Shape<D>,
-        device: &<TchBackend<E> as Backend>::Device,
+        device: &<LibTorch<E> as Backend>::Device,
     ) -> TchTensor<i64, D> {
         let shape = TchShape::from(shape);
         let device: tch::Device = (*device).into();
@@ -227,7 +243,7 @@ impl<E: TchElement> IntTensorOps<TchBackend<E>> for TchBackend<E> {
     fn int_full<const D: usize>(
         shape: Shape<D>,
         fill_value: i64,
-        device: &<TchBackend<E> as Backend>::Device,
+        device: &<LibTorch<E> as Backend>::Device,
     ) -> TchTensor<i64, D> {
         let shape = TchShape::from(shape);
         let device: tch::Device = (*device).into();
@@ -379,10 +395,27 @@ impl<E: TchElement> IntTensorOps<TchBackend<E>> for TchBackend<E> {
     }
 
     fn int_swap_dims<const D: usize>(
-        tensor: <TchBackend<E> as Backend>::IntTensorPrimitive<D>,
+        tensor: <LibTorch<E> as Backend>::IntTensorPrimitive<D>,
         dim1: usize,
         dim2: usize,
-    ) -> <TchBackend<E> as Backend>::IntTensorPrimitive<D> {
+    ) -> <LibTorch<E> as Backend>::IntTensorPrimitive<D> {
         TchOps::swap_dims(tensor, dim1, dim2)
+    }
+
+    fn int_narrow<const D: usize>(
+        tensor: TchTensor<i64, D>,
+        dim: usize,
+        start: usize,
+        length: usize,
+    ) -> TchTensor<i64, D> {
+        TchOps::narrow(tensor, dim, start, length)
+    }
+
+    fn int_chunk<const D: usize>(
+        tensor: TchTensor<i64, D>,
+        chunks: usize,
+        dim: usize,
+    ) -> Vec<TchTensor<i64, D>> {
+        TchOps::chunk(tensor, chunks, dim)
     }
 }

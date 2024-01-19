@@ -4,11 +4,11 @@ use burn::data::dataset::source::huggingface::MNISTDataset;
 use burn::{
     config::Config,
     data::dataloader::DataLoaderBuilder,
-    module::ADModule,
+    module::AutodiffModule,
     nn::loss::CrossEntropyLoss,
     optim::{AdamConfig, GradientsParams, Optimizer},
     tensor::{
-        backend::{ADBackend, Backend},
+        backend::{AutodiffBackend, Backend},
         ElementConversion, Int, Tensor,
     },
 };
@@ -33,7 +33,7 @@ pub struct MnistTrainingConfig {
     pub optimizer: AdamConfig,
 }
 
-pub fn run<B: ADBackend>(device: B::Device) {
+pub fn run<B: AutodiffBackend>(device: B::Device) {
     // Create the configuration.
     let config_model = ModelConfig::new(10, 1024);
     let config_optimizer = AdamConfig::new();
@@ -42,7 +42,7 @@ pub fn run<B: ADBackend>(device: B::Device) {
     B::seed(config.seed);
 
     // Create the model and optimizer.
-    let mut model = config.model.init();
+    let mut model = config.model.init(&device);
     let mut optim = config.optimizer.init();
 
     // Create the batcher.
@@ -67,7 +67,8 @@ pub fn run<B: ADBackend>(device: B::Device) {
         // Implement our training loop.
         for (iteration, batch) in dataloader_train.iter().enumerate() {
             let output = model.forward(batch.images);
-            let loss = CrossEntropyLoss::new(None).forward(output.clone(), batch.targets.clone());
+            let loss = CrossEntropyLoss::new(None, &output.device())
+                .forward(output.clone(), batch.targets.clone());
             let accuracy = accuracy(output, batch.targets);
 
             println!(
@@ -92,7 +93,8 @@ pub fn run<B: ADBackend>(device: B::Device) {
         // Implement our validation loop.
         for (iteration, batch) in dataloader_test.iter().enumerate() {
             let output = model_valid.forward(batch.images);
-            let loss = CrossEntropyLoss::new(None).forward(output.clone(), batch.targets.clone());
+            let loss = CrossEntropyLoss::new(None, &output.device())
+                .forward(output.clone(), batch.targets.clone());
             let accuracy = accuracy(output, batch.targets);
 
             println!(
@@ -118,7 +120,7 @@ fn accuracy<B: Backend>(output: Tensor<B, 2>, targets: Tensor<B, 1, Int>) -> f32
 #[allow(dead_code)]
 struct Learner1<B, O>
 where
-    B: ADBackend,
+    B: AutodiffBackend,
 {
     model: Model<B>,
     optim: O,
@@ -140,7 +142,7 @@ struct Learner3<B, M, O> {
 #[allow(dead_code)]
 impl<B, O> Learner1<B, O>
 where
-    B: ADBackend,
+    B: AutodiffBackend,
     O: Optimizer<Model<B>, B>,
 {
     pub fn step1(&mut self, _batch: MNISTBatch<B>) {
@@ -151,7 +153,7 @@ where
 #[allow(dead_code)]
 impl<B, O> Learner2<Model<B>, O>
 where
-    B: ADBackend,
+    B: AutodiffBackend,
     O: Optimizer<Model<B>, B>,
 {
     pub fn step2(&mut self, _batch: MNISTBatch<B>) {
@@ -161,10 +163,10 @@ where
 
 #[allow(dead_code)]
 impl<M, O> Learner2<M, O> {
-    pub fn step3<B: ADBackend>(&mut self, _batch: MNISTBatch<B>)
+    pub fn step3<B: AutodiffBackend>(&mut self, _batch: MNISTBatch<B>)
     where
-        B: ADBackend,
-        M: ADModule<B>,
+        B: AutodiffBackend,
+        M: AutodiffModule<B>,
         O: Optimizer<M, B>,
     {
         //

@@ -25,7 +25,7 @@ macro_rules! test_model {
             let model: $mod_name::Model<Backend> = $mod_name::Model::default();
 
             // Run the model with pi as input for easier testing
-            let input = Tensor::<Backend, 3>::full([6, 4, 10], consts::PI);
+            let input = Tensor::<Backend, 3>::full([6, 4, 10], consts::PI, &Default::default());
 
             let output = model.forward(input);
 
@@ -48,7 +48,7 @@ mod tests {
     use float_cmp::ApproxEq;
     use std::f64::consts;
 
-    type Backend = burn_ndarray::NdArrayBackend<f32>;
+    type Backend = burn_ndarray::NdArray<f32>;
 
     test_model!(named_mpk);
     test_model!(named_mpk_half, 1.0e-2); // Reduce tolerance for half precision

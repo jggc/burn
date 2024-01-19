@@ -6,32 +6,38 @@ use alloc::{
 };
 use core::convert::Into;
 
-use crate::model::{label::LABELS, normalizer::Normalizer, squeezenet1::Model as SqueezenetModel};
+use crate::model::{label::LABELS, normalizer::Normalizer, squeezenet::Model as SqueezenetModel};
 
 use burn::{
-    backend::{
-        wgpu::{compute::init_async, AutoGraphicsApi, WgpuBackend, WgpuDevice},
-        NdArrayBackend,
-    },
+    backend::NdArray,
     tensor::{activation::softmax, backend::Backend, Tensor},
 };
-use burn_candle::CandleBackend;
+
+use burn_candle::Candle;
+use burn_wgpu::{compute::init_async, AutoGraphicsApi, Wgpu, WgpuDevice};
 
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use wasm_timer::Instant;
 
+#[wasm_bindgen(start)]
+pub fn start() {
+    // Initialize the logger so that the logs are printed to the console
+    console_error_panic_hook::set_once();
+    wasm_logger::init(wasm_logger::Config::default());
+}
+
 #[allow(clippy::large_enum_variant)]
 /// The model is loaded to a specific backend
 pub enum ModelType {
     /// The model is loaded to the Candle backend
-    WithCandleBackend(Model<CandleBackend<f32, i64>>),
+    WithCandleBackend(Model<Candle<f32, i64>>),
 
     /// The model is loaded to the NdArray backend
-    WithNdarrayBackend(Model<NdArrayBackend<f32>>),
+    WithNdArrayBackend(Model<NdArray<f32>>),
 
     /// The model is loaded to the Wgpu backend
-    WithWgpuBackend(Model<WgpuBackend<AutoGraphicsApi, f32, i32>>),
+    WithWgpuBackend(Model<Wgpu<AutoGraphicsApi, f32, i32>>),
 }
 
 /// The image is 224x224 pixels with 3 channels (RGB)
@@ -50,13 +56,10 @@ impl ImageClassifier {
     /// Constructor called by JavaScripts with the new keyword.
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
-        // Initialize the logger so that the logs are printed to the console
-        wasm_logger::init(wasm_logger::Config::default());
-
         log::info!("Initializing the image classifier");
-
+        let device = Default::default();
         Self {
-            model: ModelType::WithNdarrayBackend(Model::new()),
+            model: ModelType::WithNdArrayBackend(Model::new(&device)),
         }
     }
 
@@ -68,7 +71,7 @@ impl ImageClassifier {
 
         let result = match self.model {
             ModelType::WithCandleBackend(ref model) => model.forward(input).await,
-            ModelType::WithNdarrayBackend(ref model) => model.forward(input).await,
+            ModelType::WithNdArrayBackend(ref model) => model.forward(input).await,
             ModelType::WithWgpuBackend(ref model) => model.forward(input).await,
         };
 
@@ -83,7 +86,8 @@ impl ImageClassifier {
     pub async fn set_backend_candle(&mut self) -> Result<(), JsValue> {
         log::info!("Loading the model to the Candle backend");
         let start = Instant::now();
-        self.model = ModelType::WithCandleBackend(Model::new());
+        let device = Default::default();
+        self.model = ModelType::WithCandleBackend(Model::new(&device));
         let duration = start.elapsed();
         log::debug!("Model is loaded to the Candle backend in {:?}", duration);
         Ok(())
@@ -93,7 +97,8 @@ impl ImageClassifier {
     pub async fn set_backend_ndarray(&mut self) -> Result<(), JsValue> {
         log::info!("Loading the model to the NdArray backend");
         let start = Instant::now();
-        self.model = ModelType::WithNdarrayBackend(Model::new());
+        let device = Default::default();
+        self.model = ModelType::WithNdArrayBackend(Model::new(&device));
         let duration = start.elapsed();
         log::debug!("Model is loaded to the NdArray backend in {:?}", duration);
         Ok(())
@@ -103,8 +108,9 @@ impl ImageClassifier {
     pub async fn set_backend_wgpu(&mut self) -> Result<(), JsValue> {
         log::info!("Loading the model to the Wgpu backend");
         let start = Instant::now();
-        init_async::<AutoGraphicsApi>(&WgpuDevice::default()).await;
-        self.model = ModelType::WithWgpuBackend(Model::new());
+        let device = WgpuDevice::default();
+        init_async::<AutoGraphicsApi>(&device).await;
+        self.model = ModelType::WithWgpuBackend(Model::new(&device));
         let duration = start.elapsed();
         log::debug!("Model is loaded to the Wgpu backend in {:?}", duration);
 
@@ -125,17 +131,18 @@ pub struct Model<B: Backend> {
 
 impl<B: Backend> Model<B> {
     /// Constructor
-    pub fn new() -> Self {
+    pub fn new(device: &B::Device) -> Self {
         Self {
             model: SqueezenetModel::from_embedded(),
-            normalizer: Normalizer::new(),
+            normalizer: Normalizer::new(device),
         }
     }
 
     /// Normalizes input and runs inference on the image
     pub async fn forward(&self, input: &[f32]) -> Vec<f32> {
         // Reshape from the 1D array to 3d tensor [ width, height, channels]
-        let input: Tensor<B, 4> = Tensor::from_floats(input).reshape([1, CHANNELS, HEIGHT, WIDTH]);
+        let input: Tensor<B, 4> =
+            Tensor::from_floats(input, &B::Device::default()).reshape([1, CHANNELS, HEIGHT, WIDTH]);
 
         // Normalize input: make between [-1,1] and make the mean=0 and std=1
         let input = self.normalizer.normalize(input);

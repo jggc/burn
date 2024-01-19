@@ -18,15 +18,17 @@ mod tests {
     extern crate alloc;
     use super::*;
 
-    pub type TestBackend = CandleBackend<f32, i64>;
-    pub type ReferenceBackend = burn_tch::TchBackend<f32>;
+    pub type TestBackend = Candle<f32, i64>;
+    pub type ReferenceBackend = burn_tch::LibTorch<f32>;
 
     pub type TestTensor<const D: usize> = burn_tensor::Tensor<TestBackend, D>;
     pub type ReferenceTensor<const D: usize> = burn_tensor::Tensor<ReferenceBackend, D>;
     pub type TestTensorInt<const D: usize> = burn_tensor::Tensor<TestBackend, D, burn_tensor::Int>;
+    pub type TestTensorBool<const D: usize> =
+        burn_tensor::Tensor<TestBackend, D, burn_tensor::Bool>;
 
-    type TestADBackend = burn_autodiff::ADBackendDecorator<TestBackend>;
-    type TestADTensor<const D: usize, K> = burn_tensor::Tensor<TestADBackend, D, K>;
+    type TestAutodiffBackend = burn_autodiff::Autodiff<TestBackend>;
+    type TestAutodiffTensor<const D: usize> = burn_tensor::Tensor<TestAutodiffBackend, D>;
 
     // test activation
     burn_tensor::testgen_gelu!();
@@ -56,10 +58,11 @@ mod tests {
     burn_tensor::testgen_arg!();
     burn_tensor::testgen_cast!();
     burn_tensor::testgen_cat!();
+    burn_tensor::testgen_recip!();
     burn_tensor::testgen_clamp!();
     burn_tensor::testgen_cos!();
     // burn_tensor::testgen_div!();
-    // burn_tensor::testgen_erf!();
+    burn_tensor::testgen_erf!();
     burn_tensor::testgen_exp!();
     burn_tensor::testgen_flatten!();
     burn_tensor::testgen_full!();
@@ -75,11 +78,11 @@ mod tests {
     burn_tensor::testgen_neg!();
     burn_tensor::testgen_powf!();
     burn_tensor::testgen_random!();
-    // burn_tensor::testgen_repeat!();
+    burn_tensor::testgen_repeat!();
     burn_tensor::testgen_reshape!();
     burn_tensor::testgen_select!();
     burn_tensor::testgen_sin!();
-    // burn_tensor::testgen_slice!();
+    burn_tensor::testgen_slice!();
     burn_tensor::testgen_sqrt!();
     burn_tensor::testgen_abs!();
     burn_tensor::testgen_squeeze!();
@@ -121,9 +124,9 @@ mod tests {
     burn_autodiff::testgen_ad_cos!();
     burn_autodiff::testgen_ad_cross_entropy_loss!();
     burn_autodiff::testgen_ad_div!();
-    // burn_autodiff::testgen_ad_erf!();
+    burn_autodiff::testgen_ad_erf!();
     burn_autodiff::testgen_ad_exp!();
-    // burn_autodiff::testgen_ad_slice!();
+    burn_autodiff::testgen_ad_slice!();
     burn_autodiff::testgen_ad_gather_scatter!();
     burn_autodiff::testgen_ad_select!();
     burn_autodiff::testgen_ad_log!();
@@ -133,6 +136,7 @@ mod tests {
     burn_autodiff::testgen_ad_mul!();
     burn_autodiff::testgen_ad_neg!();
     burn_autodiff::testgen_ad_powf!();
+    burn_autodiff::testgen_ad_recip!();
     burn_autodiff::testgen_ad_reshape!();
     burn_autodiff::testgen_ad_sin!();
     burn_autodiff::testgen_ad_softmax!();

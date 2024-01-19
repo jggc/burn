@@ -1,12 +1,12 @@
 use core::marker::PhantomData;
 
-use crate::module::{ADModule, ModuleVisitor, ParamId};
+use crate::module::{AutodiffModule, ModuleVisitor, ParamId};
 
-use burn_tensor::{backend::ADBackend, Tensor};
+use burn_tensor::{backend::AutodiffBackend, Tensor};
 
 use super::GradientsParams;
 
-/// Accumulate gradients into a single [Gradients](ADBackend::Gradients) object.
+/// Accumulate gradients into a single [Gradients](AutodiffBackend::Gradients) object.
 pub struct GradientsAccumulator<M> {
     grads: GradientsParams,
     phantom: PhantomData<M>,
@@ -30,9 +30,9 @@ impl<M> GradientsAccumulator<M> {
 
 impl<M> GradientsAccumulator<M> {
     /// Accumulate the given gradients for each parameter in the given module.
-    pub fn accumulate<B: ADBackend>(&mut self, module: &M, grads: GradientsParams)
+    pub fn accumulate<B: AutodiffBackend>(&mut self, module: &M, grads: GradientsParams)
     where
-        M: ADModule<B>,
+        M: AutodiffModule<B>,
     {
         let mut visitor = ModuleGradsAccumulator::<M>::new(&mut self.grads, grads);
         module.visit(&mut visitor);
@@ -54,8 +54,10 @@ struct ModuleGradsAccumulator<'a, M> {
     phantom: PhantomData<M>,
 }
 
-impl<'a, B: ADBackend, M: ADModule<B>> ModuleVisitor<B> for ModuleGradsAccumulator<'a, M> {
-    fn visit<const D: usize>(&mut self, id: &ParamId, _tensor: &Tensor<B, D>) {
+impl<'a, B: AutodiffBackend, M: AutodiffModule<B>> ModuleVisitor<B>
+    for ModuleGradsAccumulator<'a, M>
+{
+    fn visit_float<const D: usize>(&mut self, id: &ParamId, _tensor: &Tensor<B, D>) {
         let grad_updated = match self.grads_new.remove::<B::InnerBackend, D>(id) {
             Some(new) => match self.grads.remove::<B::InnerBackend, D>(id) {
                 Some(grad) => grad.add(new),
@@ -77,15 +79,16 @@ mod tests {
     use super::*;
     use crate::{
         nn::{Linear, LinearConfig},
-        TestADBackend,
+        TestAutodiffBackend,
     };
-    use burn_tensor::Distribution;
+    use burn_tensor::{backend::Backend, Distribution};
 
     #[test]
     fn test_accumulate_gradients_one_step() {
+        let device = Default::default();
         let mut accumulator = GradientsAccumulator::new();
-        let layer = layer();
-        let loss = layer.forward(random_tensor());
+        let layer = layer::<TestAutodiffBackend>(&device);
+        let loss = layer.forward(random_tensor::<TestAutodiffBackend>(&device));
         let grads = GradientsParams::from_grads(loss.backward(), &layer);
 
         accumulator.accumulate(&layer, grads);
@@ -96,10 +99,11 @@ mod tests {
 
     #[test]
     fn test_accumulate_gradients_two_steps() {
+        let device = Default::default();
         let mut accumulator = GradientsAccumulator::new();
-        let layer = layer();
-        let loss_1 = layer.forward(random_tensor());
-        let loss_2 = layer.forward(random_tensor());
+        let layer = layer::<TestAutodiffBackend>(&device);
+        let loss_1 = layer.forward(random_tensor(&device));
+        let loss_2 = layer.forward(random_tensor(&device));
         let grads_1 = GradientsParams::from_grads(loss_1.backward(), &layer);
         let grads_2 = GradientsParams::from_grads(loss_2.backward(), &layer);
 
@@ -110,11 +114,11 @@ mod tests {
         assert_eq!(grads.len(), 2)
     }
 
-    fn layer() -> Linear<TestADBackend> {
-        LinearConfig::new(20, 20).with_bias(true).init()
+    fn layer<B: Backend>(device: &B::Device) -> Linear<B> {
+        LinearConfig::new(20, 20).with_bias(true).init(device)
     }
 
-    fn random_tensor() -> Tensor<TestADBackend, 2> {
-        Tensor::<TestADBackend, 2>::random([2, 20], Distribution::Default)
+    fn random_tensor<B: Backend>(device: &B::Device) -> Tensor<B, 2> {
+        Tensor::<B, 2>::random([2, 20], Distribution::Default, device)
     }
 }

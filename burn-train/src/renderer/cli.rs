@@ -1,8 +1,9 @@
-use crate::metric::callback::{MetricState, MetricsRenderer, TrainingProgress};
+use crate::renderer::{MetricState, MetricsRenderer, TrainingProgress};
 
 /// A simple renderer for when the cli feature is not enabled.
 pub struct CliMetricsRenderer;
 
+#[allow(clippy::new_without_default)]
 impl CliMetricsRenderer {
     /// Create a new instance.
     pub fn new() -> Self {

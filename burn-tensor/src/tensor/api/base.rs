@@ -2,19 +2,20 @@
 
 use alloc::vec::Vec;
 
-#[cfg(not(target_family = "wasm"))]
+#[cfg(any(feature = "wasm-sync", not(target_family = "wasm")))]
 use alloc::format;
-#[cfg(not(target_family = "wasm"))]
+#[cfg(any(feature = "wasm-sync", not(target_family = "wasm")))]
 use alloc::string::String;
-#[cfg(not(target_family = "wasm"))]
+#[cfg(any(feature = "wasm-sync", not(target_family = "wasm")))]
 use alloc::vec;
 
 use burn_common::{reader::Reader, stub::Mutex};
 use core::{fmt::Debug, ops::Range};
 
-use crate::{
-    backend::Backend, check, check::TensorCheck, Bool, Data, Float, Int, Shape, TensorKind,
-};
+use crate::check::TensorCheck;
+use crate::tensor::api::chunk::chunk;
+use crate::tensor::api::narrow::narrow;
+use crate::{backend::Backend, check, Bool, Data, Float, Int, Shape, TensorKind};
 
 /// A tensor with a given backend, shape and data type.
 #[derive(new, Clone, Debug)]
@@ -24,6 +25,17 @@ where
     K: TensorKind<B>,
 {
     pub(crate) primitive: K::Primitive<D>,
+}
+
+impl<B, const D: usize, K, T> From<T> for Tensor<B, D, K>
+where
+    B: Backend,
+    K: BasicOps<B>,
+    T: Into<Data<K::Elem, D>>,
+{
+    fn from(value: T) -> Self {
+        Tensor::from_data(value.into(), &Default::default())
+    }
 }
 
 impl<B, const D: usize, K> Tensor<B, D, K>
@@ -42,12 +54,7 @@ where
     }
 
     /// Create an empty tensor of the given shape.
-    pub fn empty<S: Into<Shape<D>>>(shape: S) -> Self {
-        Self::empty_device(shape, &B::Device::default())
-    }
-
-    /// Create an empty tensor of the given shape.
-    pub fn empty_device<S: Into<Shape<D>>>(shape: S, device: &B::Device) -> Self {
+    pub fn empty<S: Into<Shape<D>>>(shape: S, device: &B::Device) -> Self {
         Self::new(K::empty(shape.into(), device))
     }
 
@@ -88,7 +95,8 @@ where
     /// use burn_tensor::Tensor;
     ///
     /// fn example<B: Backend>() {
-    ///    let tensor = Tensor::<B, 3>::ones([2, 3, 4]);
+    ///    let device = Default::default();
+    ///    let tensor = Tensor::<B, 3>::ones([2, 3, 4], &device);
     ///    // Given a 3D tensor with dimensions (2, 3, 4), reshape it to (2, 12)
     ///    let reshaped_tensor: Tensor::<B, 2> = tensor.reshape([2, -1]);
     ///    // The resulting tensor will have dimensions (2, 12).
@@ -155,7 +163,8 @@ where
     /// use burn_tensor::{Tensor, Shape};
     ///
     /// fn example<B: Backend>() {
-    ///     let tensor = Tensor::<B, 3>::ones(Shape::new([2, 3, 4]));
+    ///     let device = Default::default();
+    ///     let tensor = Tensor::<B, 3>::ones(Shape::new([2, 3, 4]), &device);
     ///
     ///     // Given a 3D tensor with dimensions (2, 3, 4), flatten the dimensions between indices 1 and 2:
     ///     let flattened_tensor: Tensor::<B, 2> = tensor.flatten(1, 2);
@@ -206,7 +215,8 @@ where
     /// use burn_tensor::{Tensor, Shape};
     ///
     /// fn example<B: Backend>() {
-    ///     let tensor = Tensor::<B, 3>::ones(Shape::new([2, 1, 4]));
+    ///     let device = Default::default();
+    ///     let tensor = Tensor::<B, 3>::ones(Shape::new([2, 1, 4]), &device);
     ///
     ///     // Given a 3D tensor with dimensions (2, 1, 4), squeeze the dimension 1
     ///     let squeezed_tensor: Tensor::<B, 2> = tensor.squeeze(1);
@@ -238,7 +248,8 @@ where
     /// use burn_tensor::{Tensor, Shape};
     ///
     /// fn example<B: Backend>() {
-    ///     let tensor = Tensor::<B, 2>::ones(Shape::new([3, 3]));
+    ///     let device = Default::default();
+    ///     let tensor = Tensor::<B, 2>::ones(Shape::new([3, 3]), &device);
     ///     let tensor = tensor.unsqueeze::<4>();
     ///     println!("{:?}", tensor.shape());
     ///     // Shape { dims: [1, 1, 3, 3] }
@@ -257,6 +268,41 @@ where
         self.reshape(shape)
     }
 
+    /// Creates a new tensor with a dimension of size one inserted at the specified position.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use burn_tensor::backend::Backend;
+    /// use burn_tensor::{Tensor, Shape};
+    ///
+    /// fn example<B: Backend>() {
+    ///     let device = Default::default();
+    ///     let tensor = Tensor::<B, 2>::ones(Shape::new([3, 3]), &device);
+    ///     let tensor: Tensor<B, 3> = tensor.unsqueeze_dim(1);
+    ///     println!("{:?}", tensor.shape());
+    ///     // Shape { dims: [3, 1, 3] }
+    /// }
+    /// ```
+    pub fn unsqueeze_dim<const D2: usize>(self, dim: usize) -> Tensor<B, D2, K> {
+        check!(TensorCheck::unsqueeze_dim::<{ D }>(dim));
+
+        let mut dims = [1; D2];
+        let shape = self.shape();
+
+        dims[0..dim].copy_from_slice(&shape.dims[0..dim]);
+
+        if dim < D {
+            dims[dim] = 1;
+            dims[(dim + 1)..].copy_from_slice(&shape.dims[dim..]);
+        } else {
+            dims[dim] = 1;
+        }
+
+        let shape = Shape::new(dims);
+        self.reshape(shape)
+    }
+
     /// Returns a tensor containing the elements selected from the given ranges.
     ///
     /// # Panics
@@ -270,10 +316,36 @@ where
     /// use burn_tensor::{Tensor, Shape};
     ///
     /// fn example<B: Backend>() {
-    ///     let tensor = Tensor::<B, 3>::ones(Shape::new([2, 3, 3]));
+    ///     let device = B::Device::default();
+    ///     // Create a tensor with a single dimension of ints between 0 and 11
+    ///     let tensor = Tensor::<B, 1, burn_tensor::Int>::arange(0..12, &device);
+    ///     // Select elements 0, 1, 2, 3 from the first dimension
+    ///     let tensor_slices = tensor.clone().slice([0..4]);
+    ///     println!("\nexpecting [0,1,2,3] : {:?}", tensor);
+    ///     println!("expecting [4] : {:?}", tensor.dims());
+    ///
+    ///     // Create a Tensor with 3 dimensions
+    ///     let tensor = Tensor::<B, 3>::ones(Shape::new([2, 3, 3]), &device);
+    ///     // This slice will select the element 0 on the first dimension,
+    ///     // elements 0,1,2 of the second dimension and element 1 of third dimension
     ///     let tensor_slices = tensor.slice([0..1, 0..3, 1..2]);
-    ///     println!("{:?}", tensor_slices.dims()); // [1, 3, 2]
-    ///     
+    ///     println!("expecting [1, 3, 1] : {:?}", tensor_slices.dims());
+    ///
+    ///     // Create a tensor of ints from 0 to 11 and reshape it into three dimensions
+    ///     let tensor = Tensor::<B, 1, burn_tensor::Int>::arange(0..12, &device);
+    ///     let tensor = tensor.reshape([1, 3, 4]);
+    ///     println!("\nexpecting [[[0,1,2,3],[4,5,6,7],[8,9,10,11]]] : {:?}", tensor);
+    ///     println!("expecting [1, 3, 4] : {:?}", tensor.dims());
+    ///     // Select element 0 of first dimension, elements 1,2 of second dimension
+    ///     // and element 1 of third dimension
+    ///     //
+    ///     // This is the equivalent of this pseudo code
+    ///     // let mut v = vec![[[]]];
+    ///     // v[0][0][0] = tensor[0][1][1];
+    ///     // v[0][1][0] = tensor[0][2][1];
+    ///     let tensor_slices = tensor.slice([0..1, 1..3, 1..2]);
+    ///     println!("\nexpecting [1, 2, 1] : {:?}", tensor_slices.dims());
+    ///     println!("expecting [[[5],[9]]] : {:?}", tensor_slices);
     /// }
     /// ```
     pub fn slice<const D2: usize>(self, ranges: [core::ops::Range<usize>; D2]) -> Self {
@@ -296,8 +368,9 @@ where
     /// use burn_tensor::Tensor;
     ///
     /// fn example<B: Backend>() {
-    ///     let tensor = Tensor::<B, 3>::ones([2, 3, 3]);
-    ///     let values = Tensor::<B, 3>::zeros([1, 1, 1]);
+    ///     let device = B::Device::default();
+    ///     let tensor = Tensor::<B, 3>::ones([2, 3, 3], &device);
+    ///     let values = Tensor::<B, 3>::zeros([1, 1, 1], &device);
     ///     let tensor_sliced = tensor.slice_assign([0..1, 0..1, 0..1], values);
     ///     println!("{:?}", tensor_sliced.dims()); // [2, 3, 3]
     /// }
@@ -325,40 +398,32 @@ where
         Self::new(K::to_device(self.primitive, device))
     }
 
-    #[cfg(target_family = "wasm")]
+    #[cfg(all(not(feature = "wasm-sync"), target_family = "wasm"))]
     /// Returns the data of the current tensor.
     pub async fn into_data(self) -> Data<K::Elem, D> {
         K::into_data(self.primitive).read().await
     }
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(any(feature = "wasm-sync", not(target_family = "wasm")))]
     /// Returns the data of the current tensor.
     pub fn into_data(self) -> Data<K::Elem, D> {
         K::into_data(self.primitive).read()
     }
 
-    #[cfg(target_family = "wasm")]
+    #[cfg(all(not(feature = "wasm-sync"), target_family = "wasm"))]
     /// Returns the data of the current tensor.
     pub async fn to_data(&self) -> Data<K::Elem, D> {
         K::into_data(self.primitive.clone()).read().await
     }
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(any(feature = "wasm-sync", not(target_family = "wasm")))]
     /// Returns the data of the current tensor without taking ownership.
     pub fn to_data(&self) -> Data<K::Elem, D> {
         Self::into_data(self.clone())
     }
 
-    /// Create a tensor from the given data.
-    pub fn from_data<T>(data: T) -> Self
-    where
-        T: Into<Data<K::Elem, D>>,
-    {
-        Self::from_data_device(data, &B::Device::default())
-    }
-
     /// Create a tensor from the given data on the given device.
-    pub fn from_data_device<T>(data: T, device: &B::Device) -> Self
+    pub fn from_data<T>(data: T, device: &B::Device) -> Self
     where
         T: Into<Data<K::Elem, D>>,
     {
@@ -398,6 +463,18 @@ where
         ))
     }
 
+    /// Concatenates all tensors into a new one along a new dimension.
+    ///
+    /// # Panics
+    ///
+    /// If all tensors don't have the same shape.
+    /// Given dimension is not with range of 0..D2
+    pub fn stack<const D2: usize>(tensors: Vec<Tensor<B, D, K>>, dim: usize) -> Tensor<B, D2, K> {
+        check!(TensorCheck::stack(&tensors, dim));
+        let tensors = tensors.into_iter().map(|t| t.unsqueeze_dim(dim)).collect();
+        Tensor::<B, D2, K>::cat(tensors, dim)
+    }
+
     /// Iterate over slices of tensors alongside a given dimension.
     ///
     /// # Panics
@@ -411,6 +488,42 @@ where
         check!(TensorCheck::dim_ops::<D>("iter_dim", dim));
         DimIter::new(self, dim)
     }
+
+    /// Returns a new tensor with the given dimension narrowed to the given range.
+    ///
+    /// # Panics
+    ///
+    /// - If the dimension is greater than the number of dimensions of the tensor.
+    /// - If the given range exceeds the number of elements on the given dimension.
+    ///
+    /// # Returns
+    ///
+    /// A new tensor with the given dimension narrowed to the given range.
+    pub fn narrow(self, dim: usize, start: usize, length: usize) -> Self {
+        check!(TensorCheck::dim_ops::<D>("narrow", dim));
+        check!(TensorCheck::narrow(&self, dim, start, length));
+        Self::new(narrow::<B, D, K>(self.primitive, dim, start, length))
+    }
+
+    /// Attempts to split the tensor along the given dimension into chunks.
+    /// May return less chunks than requested if the tensor size is not divisible by the number of chunks.
+    ///
+    /// When the given dimension is evenly divisible by the number of chunks, the chunks will be of equal size.
+    /// Otherwise all chunks will be of equal size except for the last one.
+    ///
+    /// # Panics
+    ///
+    ///  If the dimension is greater than the number of dimensions of the tensor.
+    ///
+    /// # Returns
+    /// A vector of tensors.
+    pub fn chunk(self, chunks: usize, dim: usize) -> Vec<Self> {
+        check!(TensorCheck::dim_ops::<D>("chunk", dim));
+        chunk::<B, D, K>(self.primitive, chunks, dim)
+            .into_iter()
+            .map(|v| Self::new(v))
+            .collect()
+    }
 }
 
 /// Iterator given by (Tensor::iter_dim).
@@ -419,9 +532,9 @@ where
     B: Backend,
     K: BasicOps<B>,
 {
-    counter: usize,
+    start: usize,
+    end: usize,
     dim: usize,
-    end_idx: usize,
     ranges: [Range<usize>; D],
     tensor: Tensor<B, D, K>,
 }
@@ -430,16 +543,33 @@ impl<B: Backend, const D: usize, K: BasicOps<B>> Iterator for DimIter<B, D, K> {
     type Item = Tensor<B, D, K>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let res = if self.counter < self.end_idx {
-            let mut ranges = self.ranges.clone();
-            ranges[self.dim] = self.counter..(self.counter + 1);
-            let slice = self.tensor.clone().slice(ranges);
-            Some(slice)
-        } else {
-            None
-        };
-        self.counter += 1;
-        res
+        if self.start >= self.end {
+            return None;
+        }
+
+        let mut ranges = self.ranges.clone();
+        ranges[self.dim] = self.start..(self.start + 1);
+
+        let slice = self.tensor.clone().slice(ranges);
+        self.start += 1;
+
+        Some(slice)
+    }
+}
+
+impl<B: Backend, const D: usize, K: BasicOps<B>> DoubleEndedIterator for DimIter<B, D, K> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.start >= self.end {
+            return None;
+        }
+
+        let mut ranges = self.ranges.clone();
+        ranges[self.dim] = (self.end - 1)..self.end;
+
+        let slice = self.tensor.clone().slice(ranges);
+        self.end = self.end.saturating_sub(1);
+
+        Some(slice)
     }
 }
 
@@ -452,9 +582,9 @@ impl<B: Backend, const D: usize, K: BasicOps<B>> DimIter<B, D, K> {
             .collect::<Vec<Range<usize>>>();
         let ranges: [Range<usize>; D] = ranges.try_into().unwrap();
         Self {
-            end_idx: dims[dim],
+            end: dims[dim],
             ranges,
-            counter: 0,
+            start: 0,
             dim,
             tensor,
         }
@@ -467,7 +597,7 @@ where
     K: BasicOps<B>,
     <K as BasicOps<B>>::Elem: Debug,
 {
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(any(feature = "wasm-sync", not(target_family = "wasm")))]
     #[inline]
     fn push_newline_indent(acc: &mut String, indent: usize) {
         acc.push('\n');
@@ -476,7 +606,7 @@ where
         }
     }
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(any(feature = "wasm-sync", not(target_family = "wasm")))]
     fn fmt_inner_tensor(
         &self,
         acc: &mut String,
@@ -498,7 +628,7 @@ where
         }
     }
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(any(feature = "wasm-sync", not(target_family = "wasm")))]
     fn fmt_outer_tensor(
         &self,
         acc: &mut String,
@@ -533,7 +663,7 @@ where
     /// * `acc` - A mutable reference to a `String` used as an accumulator for the formatted output.
     /// * `depth` - The current depth of the tensor dimensions being processed.
     /// * `multi_index` - A mutable slice of `usize` representing the current indices in each dimension.
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(any(feature = "wasm-sync", not(target_family = "wasm")))]
     fn display_recursive(
         &self,
         acc: &mut String,
@@ -644,7 +774,7 @@ where
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         writeln!(f, "Tensor {{")?;
 
-        #[cfg(not(target_family = "wasm"))]
+        #[cfg(any(feature = "wasm-sync", not(target_family = "wasm")))]
         {
             let po = PRINT_OPTS.lock().unwrap();
             let mut acc = String::new();
@@ -673,7 +803,8 @@ where
 /// use burn_tensor::{Tensor, T};
 ///
 /// fn example<B: Backend>() {
-///     let tensor = Tensor::<B, 2>::from_floats([[1.0, 2.0], [3.0, 4.0]]);
+///     let device = Default::default();
+///     let tensor = Tensor::<B, 2>::from_floats([[1.0, 2.0], [3.0, 4.0]], &device);
 ///     let transposed = tensor^T;
 /// }
 /// ```

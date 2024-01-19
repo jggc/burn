@@ -10,7 +10,8 @@ pub(crate) fn install_file_logger(file_path: &str) {
     let path = Path::new(file_path);
     let writer = tracing_appender::rolling::never(
         path.parent().unwrap_or_else(|| Path::new(".")),
-        path.file_name().unwrap(),
+        path.file_name()
+            .unwrap_or_else(|| panic!("The path '{file_path}' to point to a file.")),
     );
     let layer = tracing_subscriber::fmt::layer()
         .with_ansi(false)
@@ -38,7 +39,8 @@ fn update_panic_hook(file_path: &str) {
     std::panic::set_hook(Box::new(move |info| {
         log::error!("PANIC => {}", info.to_string());
         eprintln!(
-            "=== PANIC ===\nA fatal error happened, you can check the experiment logs here => '{file_path}'\n============="
+            "=== PANIC ===\nA fatal error happened, you can check the experiment logs here => \
+             '{file_path}'\n============="
         );
         hook(info);
     }));

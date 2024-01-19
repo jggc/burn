@@ -1,13 +1,15 @@
 use crate::{
     grads::Gradients,
     ops::{unary, Backward, Ops, OpsKind},
-    tensor::ADTensor,
-    ADBackendDecorator,
+    Autodiff,
 };
-use burn_tensor::{backend::Backend, ops::ActivationOps};
+use burn_tensor::{
+    backend::Backend,
+    ops::{ActivationOps, FloatTensor},
+};
 
-impl<B: Backend> ActivationOps<ADBackendDecorator<B>> for ADBackendDecorator<B> {
-    fn gelu<const D: usize>(tensor: ADTensor<B, D>) -> ADTensor<B, D> {
+impl<B: Backend> ActivationOps<Autodiff<B>> for Autodiff<B> {
+    fn gelu<const D: usize>(tensor: FloatTensor<Self, D>) -> FloatTensor<Self, D> {
         #[derive(Debug)]
         struct Gelu<const D: usize>;
 
@@ -32,7 +34,7 @@ impl<B: Backend> ActivationOps<ADBackendDecorator<B>> for ADBackendDecorator<B> 
         }
     }
 
-    fn relu<const D: usize>(tensor: ADTensor<B, D>) -> ADTensor<B, D> {
+    fn relu<const D: usize>(tensor: FloatTensor<Self, D>) -> FloatTensor<Self, D> {
         #[derive(Debug)]
         struct Relu;
 
@@ -50,6 +52,29 @@ impl<B: Backend> ActivationOps<ADBackendDecorator<B>> for ADBackendDecorator<B> 
         match Relu.prepare([tensor.node], [tensor.graph]).stateful() {
             OpsKind::Tracked(prep) => prep.finish(output.clone(), output),
             OpsKind::UnTracked(prep) => prep.finish(output),
+        }
+    }
+
+    fn sigmoid<const D: usize>(tensor: FloatTensor<Self, D>) -> FloatTensor<Self, D> {
+        #[derive(Debug)]
+        struct Sigmoid;
+
+        impl<B: Backend, const D: usize> Backward<B, D, 1> for Sigmoid {
+            type State = B::TensorPrimitive<D>;
+
+            fn backward(self, ops: Ops<Self::State, 1>, grads: &mut Gradients) {
+                unary::<B, D, D, _>(ops.parents, ops.node, grads, |grad| {
+                    B::sigmoid_backward(ops.state, grad)
+                });
+            }
+        }
+
+        match Sigmoid.prepare([tensor.node], [tensor.graph]).stateful() {
+            OpsKind::Tracked(prep) => {
+                let output = B::sigmoid(tensor.primitive);
+                prep.finish(output.clone(), output)
+            }
+            OpsKind::UnTracked(prep) => prep.finish(B::sigmoid(tensor.primitive)),
         }
     }
 }

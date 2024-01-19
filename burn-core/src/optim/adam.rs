@@ -1,5 +1,5 @@
 use crate::{
-    self as burn, grad_clipping::GradientClippingConfig, module::ADModule, record::Record,
+    self as burn, grad_clipping::GradientClippingConfig, module::AutodiffModule, record::Record,
     LearningRate,
 };
 
@@ -9,7 +9,7 @@ use super::{
 };
 use crate::config::Config;
 use crate::optim::adaptor::OptimizerAdaptor;
-use crate::tensor::{backend::ADBackend, Tensor};
+use crate::tensor::{backend::AutodiffBackend, Tensor};
 use burn_tensor::{backend::Backend, ElementConversion};
 
 /// Adam configuration.
@@ -85,7 +85,7 @@ impl AdamConfig {
     /// # Returns
     ///
     /// Returns an optimizer that can be used to optimize a module.
-    pub fn init<B: ADBackend, M: ADModule<B>>(&self) -> impl Optimizer<M, B> {
+    pub fn init<B: AutodiffBackend, M: AutodiffModule<B>>(&self) -> impl Optimizer<M, B> {
         let optim = Adam {
             momentum: AdaptiveMomentum {
                 beta_1: self.beta_1,
@@ -189,20 +189,24 @@ mod tests {
     use crate::optim::{GradientsParams, Optimizer};
     use crate::record::{BinFileRecorder, FullPrecisionSettings, Recorder};
     use crate::tensor::{Data, Distribution, Tensor};
-    use crate::{nn, TestADBackend, TestBackend};
+    use crate::{nn, TestAutodiffBackend, TestBackend};
 
     const LEARNING_RATE: LearningRate = 0.01;
 
     #[test]
     fn test_adam_optimizer_save_load_state() {
-        let linear = nn::LinearConfig::new(6, 6).init();
-        let x = Tensor::<TestADBackend, 2>::random([2, 6], Distribution::Default);
+        let device = Default::default();
+        let linear = nn::LinearConfig::new(6, 6).init(&device);
+        let x = Tensor::<TestAutodiffBackend, 2>::random([2, 6], Distribution::Default, &device);
         let mut optimizer = create_adam();
         let grads = linear.forward(x).backward();
         let grads = GradientsParams::from_grads(grads, &linear);
         let _linear = optimizer.step(LEARNING_RATE, linear, grads);
         BinFileRecorder::<FullPrecisionSettings>::default()
-            .record(optimizer.to_record(), "/tmp/test_optim".into())
+            .record(
+                optimizer.to_record(),
+                std::env::temp_dir().as_path().join("test_optim"),
+            )
             .unwrap();
 
         let state_optim_before = optimizer.to_record();
@@ -217,6 +221,7 @@ mod tests {
 
     #[test]
     fn test_adam_optimizer_with_numbers() {
+        let device = Default::default();
         let linear = given_linear_layer(
             Data::from([
                 [-0.3206, 0.1374, 0.4043, 0.3200, 0.0859, 0.0671],
@@ -228,15 +233,21 @@ mod tests {
             ]),
             Data::from([-0.3905, 0.0884, -0.0970, 0.1176, 0.1366, 0.0130]),
         );
-        let x_1 = Tensor::from_floats([
-            [0.6294, 0.0940, 0.8176, 0.8824, 0.5228, 0.4310],
-            [0.7152, 0.9559, 0.7893, 0.5684, 0.5939, 0.8883],
-        ])
+        let x_1 = Tensor::from_floats(
+            [
+                [0.6294, 0.0940, 0.8176, 0.8824, 0.5228, 0.4310],
+                [0.7152, 0.9559, 0.7893, 0.5684, 0.5939, 0.8883],
+            ],
+            &device,
+        )
         .require_grad();
-        let x_2 = Tensor::from_floats([
-            [0.8491, 0.2108, 0.8939, 0.4433, 0.5527, 0.2528],
-            [0.3270, 0.0412, 0.5538, 0.9605, 0.3195, 0.9085],
-        ])
+        let x_2 = Tensor::from_floats(
+            [
+                [0.8491, 0.2108, 0.8939, 0.4433, 0.5527, 0.2528],
+                [0.3270, 0.0412, 0.5538, 0.9605, 0.3195, 0.9085],
+            ],
+            &device,
+        )
         .require_grad();
 
         let mut optimizer = AdamConfig::new()
@@ -298,10 +309,13 @@ mod tests {
             Data::from([-0.3905, 0.0884, -0.0970, 0.1176, 0.1366, 0.0130]),
         );
 
-        let x = Tensor::from_floats([
-            [0.8491, 0.2108, 0.8939, 0.4433, 0.5527, 0.2528],
-            [0.3270, 0.0412, 0.5538, 0.9605, 0.3195, 0.9085],
-        ])
+        let x = Tensor::from_floats(
+            [
+                [0.8491, 0.2108, 0.8939, 0.4433, 0.5527, 0.2528],
+                [0.3270, 0.0412, 0.5538, 0.9605, 0.3195, 0.9085],
+            ],
+            &Default::default(),
+        )
         .require_grad();
 
         let mut optimizer = AdamConfig::new()
@@ -323,16 +337,21 @@ mod tests {
         assert!(!state_updated.weight.to_data().value[0].is_nan());
     }
 
-    fn given_linear_layer(weight: Data<f32, 2>, bias: Data<f32, 1>) -> nn::Linear<TestADBackend> {
+    fn given_linear_layer(
+        weight: Data<f32, 2>,
+        bias: Data<f32, 1>,
+    ) -> nn::Linear<TestAutodiffBackend> {
+        let device = Default::default();
         let record = nn::LinearRecord {
-            weight: Param::from(Tensor::from_data(weight)),
-            bias: Some(Param::from(Tensor::from_data(bias))),
+            weight: Param::from(Tensor::from_data(weight, &device)),
+            bias: Some(Param::from(Tensor::from_data(bias, &device))),
         };
 
         nn::LinearConfig::new(6, 6).init_with(record)
     }
 
-    fn create_adam() -> OptimizerAdaptor<Adam<TestBackend>, nn::Linear<TestADBackend>, TestADBackend>
+    fn create_adam(
+    ) -> OptimizerAdaptor<Adam<TestBackend>, nn::Linear<TestAutodiffBackend>, TestAutodiffBackend>
     {
         let config = AdamConfig::new();
         Adam {

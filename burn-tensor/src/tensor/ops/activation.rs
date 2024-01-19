@@ -1,5 +1,8 @@
+use crate::tensor::ops::tensor::TensorOps;
 use crate::{backend::Backend, ElementConversion};
 use core::f64::consts::SQRT_2;
+
+use super::FloatTensor;
 
 /// Activation function operations.
 ///
@@ -14,7 +17,7 @@ pub trait ActivationOps<B: Backend> {
     /// # Returns
     ///
     /// The output tensor.
-    fn relu<const D: usize>(tensor: B::TensorPrimitive<D>) -> B::TensorPrimitive<D> {
+    fn relu<const D: usize>(tensor: FloatTensor<B, D>) -> FloatTensor<B, D> {
         let mask = B::lower_equal_elem(tensor.clone(), 0.elem());
 
         B::mask_fill(tensor, mask, 0.elem())
@@ -30,9 +33,9 @@ pub trait ActivationOps<B: Backend> {
     ///
     /// The gradient.
     fn relu_backward<const D: usize>(
-        output: B::TensorPrimitive<D>,
-        grad: B::TensorPrimitive<D>,
-    ) -> B::TensorPrimitive<D> {
+        output: FloatTensor<B, D>,
+        grad: FloatTensor<B, D>,
+    ) -> FloatTensor<B, D> {
         let mask = B::lower_equal_elem(output, 0.elem());
 
         B::mask_fill(grad, mask, 0.elem())
@@ -47,7 +50,7 @@ pub trait ActivationOps<B: Backend> {
     /// # Returns
     ///
     /// The output tensor.
-    fn gelu<const D: usize>(tensor: B::TensorPrimitive<D>) -> B::TensorPrimitive<D> {
+    fn gelu<const D: usize>(tensor: FloatTensor<B, D>) -> FloatTensor<B, D> {
         let x = B::div_scalar(tensor.clone(), SQRT_2.elem());
         let x = B::erf(x);
         let x = B::add_scalar(x, 1i32.elem());
@@ -67,9 +70,9 @@ pub trait ActivationOps<B: Backend> {
     ///
     /// The output tensor.
     fn gelu_backward<const D: usize>(
-        x: B::TensorPrimitive<D>,
-        grad: B::TensorPrimitive<D>,
-    ) -> B::TensorPrimitive<D> {
+        x: FloatTensor<B, D>,
+        grad: FloatTensor<B, D>,
+    ) -> FloatTensor<B, D> {
         // Derivative of the approximate gelu implementation based on tanh.
 
         let constant_1 = 0.0356774;
@@ -99,5 +102,44 @@ pub trait ActivationOps<B: Backend> {
         let y = B::add(y1, y2);
 
         B::mul(y, grad)
+    }
+
+    /// Applies the Sigmoid activation function.
+    ///
+    /// # Arguments
+    ///
+    /// * `tensor` - The tensor.
+    ///
+    /// # Returns
+    ///
+    /// The output tensor.
+    fn sigmoid<const D: usize>(tensor: FloatTensor<B, D>) -> FloatTensor<B, D> {
+        let tensor_full = B::to_full_precision(&tensor);
+        let tensor_tmp = B::FullPrecisionBackend::exp(B::FullPrecisionBackend::neg(
+            B::FullPrecisionBackend::log(B::FullPrecisionBackend::add_scalar(
+                B::FullPrecisionBackend::exp(B::FullPrecisionBackend::neg(tensor_full)),
+                1.0.elem(),
+            )),
+        ));
+
+        B::from_full_precision(tensor_tmp)
+    }
+
+    /// Applies the Sigmoid activation function backward.
+    ///
+    /// # Arguments
+    ///
+    /// * `output` - The output tensor of the sigmoid function.
+    /// * `grad` - The gradient.
+    ///
+    /// # Returns
+    ///
+    /// The output tensor.
+    fn sigmoid_backward<const D: usize>(
+        output: FloatTensor<B, D>,
+        grad: FloatTensor<B, D>,
+    ) -> FloatTensor<B, D> {
+        let value = B::mul(output.clone(), B::add_scalar(B::neg(output), 1.0.elem()));
+        B::mul(value, grad)
     }
 }

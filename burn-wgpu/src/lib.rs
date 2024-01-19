@@ -15,6 +15,8 @@ pub mod kernel;
 /// Tensor module.
 pub mod tensor;
 
+pub(crate) mod codegen;
+
 mod element;
 pub use element::{FloatElement, IntElement};
 
@@ -27,22 +29,22 @@ pub use backend::*;
 mod graphics;
 pub use graphics::*;
 
+#[cfg(any(feature = "fusion", test))]
+mod fusion;
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[cfg(target_os = "macos")]
-    type GraphicsApi = Metal;
-
-    #[cfg(not(target_os = "macos"))]
-    type GraphicsApi = Vulkan;
-
-    pub type TestBackend = WgpuBackend<GraphicsApi, f32, i32>;
-    pub type ReferenceBackend = burn_ndarray::NdArrayBackend<f32>;
+    pub type TestBackend = Wgpu;
+    pub type ReferenceBackend = burn_ndarray::NdArray<f32>;
 
     pub type TestTensor<const D: usize> = burn_tensor::Tensor<TestBackend, D>;
-    pub type ReferenceTensor<const D: usize> = burn_tensor::Tensor<ReferenceBackend, D>;
     pub type TestTensorInt<const D: usize> = burn_tensor::Tensor<TestBackend, D, burn_tensor::Int>;
+    pub type TestTensorBool<const D: usize> =
+        burn_tensor::Tensor<TestBackend, D, burn_tensor::Bool>;
+
+    pub type ReferenceTensor<const D: usize> = burn_tensor::Tensor<ReferenceBackend, D>;
 
     burn_tensor::testgen_all!();
     burn_autodiff::testgen_all!();

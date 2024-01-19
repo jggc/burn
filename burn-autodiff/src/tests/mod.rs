@@ -34,9 +34,11 @@ mod mul;
 mod multithread;
 mod neg;
 mod pow;
+mod recip;
 mod relu;
 mod reshape;
 mod select;
+mod sigmoid;
 mod sin;
 mod slice;
 mod softmax;
@@ -48,8 +50,8 @@ mod transpose;
 #[macro_export]
 macro_rules! testgen_all {
     () => {
-        type TestADBackend = burn_autodiff::ADBackendDecorator<TestBackend>;
-        type TestADTensor<const D: usize, K> = burn_tensor::Tensor<TestADBackend, D, K>;
+        type TestAutodiffBackend = burn_autodiff::Autodiff<TestBackend>;
+        type TestAutodiffTensor<const D: usize> = burn_tensor::Tensor<TestAutodiffBackend, D>;
 
         // Behavior
         burn_autodiff::testgen_ad_broadcast!();
@@ -94,6 +96,7 @@ macro_rules! testgen_all {
         burn_autodiff::testgen_ad_mul!();
         burn_autodiff::testgen_ad_neg!();
         burn_autodiff::testgen_ad_powf!();
+        burn_autodiff::testgen_ad_recip!();
         burn_autodiff::testgen_ad_reshape!();
         burn_autodiff::testgen_ad_sin!();
         burn_autodiff::testgen_ad_softmax!();
@@ -101,6 +104,7 @@ macro_rules! testgen_all {
         burn_autodiff::testgen_ad_abs!();
         burn_autodiff::testgen_ad_sub!();
         burn_autodiff::testgen_ad_tanh!();
+        burn_autodiff::testgen_ad_sigmoid!();
         burn_autodiff::testgen_ad_transpose!();
     };
 }

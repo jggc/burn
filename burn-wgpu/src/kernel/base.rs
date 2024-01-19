@@ -1,7 +1,8 @@
 use super::SourceTemplate;
 use crate::{
-    compute::{StaticKernel, WorkGroup},
+    compute::{StaticKernel, WgpuComputeClient, WgpuHandle, WorkGroup},
     element::WgpuElement,
+    kernel,
     tensor::WgpuTensor,
 };
 use std::marker::PhantomData;
@@ -12,15 +13,15 @@ pub(crate) const WORKGROUP_DEFAULT: usize = 16;
 pub(crate) const WORKGROUP_DEFAULT: usize = 32;
 
 /// Static wgpu kernel to create a [source template](SourceTemplate).
-pub trait StaticKernelSource: Send + 'static {
+pub trait StaticKernelSource: Send + 'static + Sync {
     /// Source template for the kernel.
     fn source() -> SourceTemplate;
 }
 
 /// Dynamic wgpu kernel to create a [source template](SourceTemplate).
-pub trait DynamicKernelSource: Send {
+pub trait DynamicKernelSource: Send + Sync {
     /// Source template for the kernel.
-    fn source(self) -> SourceTemplate;
+    fn source(&self) -> SourceTemplate;
     /// Identifier for the kernel, used for caching kernel compilation.
     fn id(&self) -> String;
 }
@@ -65,17 +66,42 @@ pub fn into_contiguous<E: WgpuElement, const D: usize>(
     let info = build_info(&[&tensor, &output]);
     let info_handle = tensor.client.create(bytemuck::cast_slice(&info));
 
-    tensor.client.execute(
-        Box::new(StaticKernel::<
-            KernelSettings<ContiguousRaw, E, i32, WORKGROUP_DEFAULT, WORKGROUP_DEFAULT, 1>,
-        >::new(elemwise_workgroup(
-            num_elems,
-            WORKGROUP_DEFAULT,
-        ))),
-        &[&tensor.handle, &output.handle, &info_handle],
-    );
+    let kernel = Box::new(StaticKernel::<
+        KernelSettings<ContiguousRaw, E, i32, WORKGROUP_DEFAULT, WORKGROUP_DEFAULT, 1>,
+    >::new(elemwise_workgroup(num_elems, WORKGROUP_DEFAULT)));
+
+    tensor
+        .client
+        .execute(kernel, &[&tensor.handle, &output.handle, &info_handle]);
 
     output
+}
+
+/// Similar to [into contiguous](into_contiguous) but with dynamic rank.
+pub fn into_contiguous_dyn<E: WgpuElement>(
+    client: WgpuComputeClient,
+    input: WgpuHandle,
+    input_shape: &[usize],
+    input_strides: &[usize],
+    output_shape: &[usize],
+    output_strides: &[usize],
+    num_elems: usize,
+) -> WgpuHandle {
+    let handle = client.empty(num_elems * core::mem::size_of::<E>());
+    let info = kernel::build_info_dyn::<E>(
+        &[input_shape, output_shape],
+        &[input_strides, output_strides],
+    );
+
+    let info_handle = client.create(bytemuck::cast_slice(&info));
+
+    let kernel = Box::new(StaticKernel::<
+        KernelSettings<ContiguousRaw, E, i32, WORKGROUP_DEFAULT, WORKGROUP_DEFAULT, 1>,
+    >::new(elemwise_workgroup(num_elems, WORKGROUP_DEFAULT)));
+
+    client.execute(kernel, &[&input, &handle, &info_handle]);
+
+    handle
 }
 
 /// Generates kernel source code by replacing some information using templating.
@@ -130,7 +156,7 @@ pub struct DynamicKernelSettings<K: StaticKernelSource, E: WgpuElement, I: WgpuE
 impl<K: StaticKernelSource, E: WgpuElement, I: WgpuElement> DynamicKernelSource
     for DynamicKernelSettings<K, E, I>
 {
-    fn source(self) -> SourceTemplate {
+    fn source(&self) -> SourceTemplate {
         K::source()
             .register("workgroup_size_x", self.workgroup_x_size.to_string())
             .register("workgroup_size_y", self.workgroup_y_size.to_string())
@@ -186,6 +212,28 @@ pub fn build_info<E: WgpuElement, const D: usize>(tensors: &[&WgpuTensor<E, D>])
     info
 }
 
+/// Similar to [build info](build_info) but with dynamic rank.
+pub fn build_info_dyn<E: WgpuElement>(shapes: &[&[usize]], strides: &[&[usize]]) -> Vec<u32> {
+    let rank = shapes.first().unwrap().len();
+    let mut info: Vec<u32> = vec![0; shapes.len() * 2 * rank + 1];
+    info[0] = rank as u32;
+
+    let mut current = 1;
+    for stride in strides.iter() {
+        for d in 0..rank {
+            info[current] = stride[d] as u32;
+            current += 1;
+        }
+    }
+    for shape in shapes.iter() {
+        for d in 0..rank {
+            info[current] = shape[d] as u32;
+            current += 1;
+        }
+    }
+    info
+}
+
 pub(crate) fn elemwise_workgroup(num_elems: usize, workgroup_size: usize) -> WorkGroup {
     let num_elem_per_invocation = workgroup_size * workgroup_size;
     let workgroups = f32::ceil(num_elems as f32 / num_elem_per_invocation as f32);
@@ -216,11 +264,11 @@ mod tests {
 
     #[test]
     fn test_kernel_type_id() {
-        kernel_wgsl!(Add, "../template/binary_elemwise.wgsl");
+        kernel_wgsl!(Cat, "../template/cat.wgsl");
 
-        let type_id_1 = TypeId::of::<KernelSettings<Add, f32, i32, 2, 3, 4>>();
-        let type_id_2 = TypeId::of::<KernelSettings<Add, f32, i32, 2, 3, 5>>();
-        let type_id_3 = TypeId::of::<KernelSettings<Add, f32, i32, 2, 3, 4>>();
+        let type_id_1 = TypeId::of::<KernelSettings<Cat, f32, i32, 2, 3, 4>>();
+        let type_id_2 = TypeId::of::<KernelSettings<Cat, f32, i32, 2, 3, 5>>();
+        let type_id_3 = TypeId::of::<KernelSettings<Cat, f32, i32, 2, 3, 4>>();
 
         assert_ne!(type_id_1, type_id_2);
         assert_eq!(type_id_1, type_id_3);

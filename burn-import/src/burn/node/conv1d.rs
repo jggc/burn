@@ -72,7 +72,7 @@ impl<PS: PrecisionSettings> NodeCodegen<PS> for Conv1dNode<PS> {
                 init_with(record.#name);
             },
             false => quote! {
-                init();
+                init(device);
             },
         };
 
@@ -90,15 +90,18 @@ impl<PS: PrecisionSettings> NodeCodegen<PS> for Conv1dNode<PS> {
     }
 
     fn field_serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let device = Default::default();
         let record = Conv1dRecord::<SerializationBackend> {
             weight: Param::new(
                 ParamId::new(),
-                Tensor::from_data(self.data_weights.clone().convert()),
+                Tensor::from_data(self.data_weights.clone().convert(), &device),
             ),
-            bias: self
-                .data_bias
-                .as_ref()
-                .map(|bias| Param::new(ParamId::new(), Tensor::from_data(bias.clone().convert()))),
+            bias: self.data_bias.as_ref().map(|bias| {
+                Param::new(
+                    ParamId::new(),
+                    Tensor::from_data(bias.clone().convert(), &device),
+                )
+            }),
             stride: ConstantRecord::new(),
             kernel_size: ConstantRecord::new(),
             dilation: ConstantRecord::new(),
@@ -188,7 +191,7 @@ mod tests {
                         phantom: core::marker::PhantomData,
                     }
                 }
-                #[allow(clippy::let_and_return)]
+                #[allow(clippy::let_and_return, clippy::approx_constant)]
                 pub fn forward(&self, input: Tensor<B, 4>) -> Tensor<B, 4> {
                     let output = self.conv1d.forward(input);
 

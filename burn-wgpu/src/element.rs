@@ -1,13 +1,15 @@
 use burn_tensor::Element;
 
 /// The base element trait for the wgou backend.
-pub trait WgpuElement: core::fmt::Debug + Send + Sync + 'static + Clone + bytemuck::Pod
+pub trait WgpuElement:
+    burn_tensor::Element + core::fmt::Debug + Send + Sync + 'static + Clone + bytemuck::Pod
 where
     Self: Sized,
 {
     fn type_name() -> &'static str;
     fn as_bytes(slice: &[Self]) -> &[u8];
     fn from_bytes(bytes: &[u8]) -> &[Self];
+    fn elem_type() -> crate::codegen::Elem;
 }
 
 /// The float element type for the wgpu backend.
@@ -26,6 +28,9 @@ impl WgpuElement for u32 {
     fn from_bytes(bytes: &[u8]) -> &[Self] {
         bytemuck::cast_slice(bytes)
     }
+    fn elem_type() -> crate::codegen::Elem {
+        crate::codegen::Elem::U32
+    }
 }
 
 impl WgpuElement for i32 {
@@ -38,6 +43,9 @@ impl WgpuElement for i32 {
     fn from_bytes(bytes: &[u8]) -> &[Self] {
         bytemuck::cast_slice(bytes)
     }
+    fn elem_type() -> crate::codegen::Elem {
+        crate::codegen::Elem::I32
+    }
 }
 
 impl WgpuElement for f32 {
@@ -49,6 +57,10 @@ impl WgpuElement for f32 {
     }
     fn from_bytes(bytes: &[u8]) -> &[Self] {
         bytemuck::cast_slice(bytes)
+    }
+
+    fn elem_type() -> crate::codegen::Elem {
+        crate::codegen::Elem::F32
     }
 }
 

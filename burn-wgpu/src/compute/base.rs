@@ -5,12 +5,15 @@ use burn_compute::{
     channel::MutexComputeChannel,
     client::ComputeClient,
     memory_management::{DeallocStrategy, SimpleMemoryManagement, SliceStrategy},
+    tune::Tuner,
     Compute,
 };
-use wgpu::DeviceDescriptor;
+use spin::Mutex;
+use wgpu::{AdapterInfo, DeviceDescriptor};
 
 type MemoryManagement = SimpleMemoryManagement<WgpuStorage>;
-type Server = WgpuServer<MemoryManagement>;
+/// Wgpu [compute server](WgpuServer)
+pub type Server = WgpuServer<MemoryManagement>;
 type Channel = MutexComputeChannel<Server>;
 
 /// Wgpu [compute client](ComputeClient) to communicate with the [compute server](WgpuServer).
@@ -59,13 +62,14 @@ async fn create_client<G: GraphicsApi>(device: &WgpuDevice) -> ComputeClient<Ser
     let storage = WgpuStorage::new(device.clone());
     let memory_management = SimpleMemoryManagement::new(
         storage,
-        DeallocStrategy::new_period_tick(1000),
-        SliceStrategy::Ratio(0.9),
+        DeallocStrategy::new_period_tick(max_tasks * 2),
+        SliceStrategy::Ratio(0.8),
     );
     let server = WgpuServer::new(memory_management, device, queue, max_tasks);
     let channel = Channel::new(server);
 
-    ComputeClient::new(channel)
+    let tuner_device_id = tuner_device_id(info);
+    ComputeClient::new(channel, Arc::new(Mutex::new(Tuner::new(&tuner_device_id))))
 }
 
 /// Select the wgpu device and queue based on the provided [device](WgpuDevice).
@@ -100,6 +104,10 @@ pub async fn select_device<G: GraphicsApi>(
         .unwrap();
 
     (device, queue, adapter.get_info())
+}
+
+fn tuner_device_id(info: AdapterInfo) -> String {
+    format!("wgpu-{}-{}", info.device, info.backend.to_str())
 }
 
 #[cfg(target_family = "wasm")]

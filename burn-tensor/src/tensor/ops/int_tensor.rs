@@ -1,4 +1,6 @@
-use crate::{backend::Backend, tensor::Shape, Data, ElementConversion};
+use super::{BoolTensor, Device, FloatTensor, IntElem, IntTensor};
+use crate::{backend::Backend, tensor::Shape, Data, ElementConversion, Int};
+use crate::{tensor::api::chunk, tensor::api::narrow};
 use alloc::vec::Vec;
 use burn_common::reader::Reader;
 use core::ops::Range;
@@ -16,7 +18,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The integer tensor with the given shape.
-    fn int_empty<const D: usize>(shape: Shape<D>, device: &B::Device) -> B::IntTensorPrimitive<D>;
+    fn int_empty<const D: usize>(shape: Shape<D>, device: &Device<B>) -> IntTensor<B, D>;
 
     /// Returns the shape of the tensor.
     ///
@@ -27,7 +29,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The shape of the tensor.
-    fn int_shape<const D: usize>(tensor: &B::IntTensorPrimitive<D>) -> Shape<D>;
+    fn int_shape<const D: usize>(tensor: &IntTensor<B, D>) -> Shape<D>;
 
     /// Converts the tensor to a data structure.
     ///
@@ -38,9 +40,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The data structure with the tensor's data.
-    fn int_into_data<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
-    ) -> Reader<Data<B::IntElem, D>>;
+    fn int_into_data<const D: usize>(tensor: IntTensor<B, D>) -> Reader<Data<IntElem<B>, D>>;
 
     /// Gets the data from the tensor.
     ///
@@ -51,9 +51,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The data cloned from the data structure.
-    fn int_to_data<const D: usize>(
-        tensor: &B::IntTensorPrimitive<D>,
-    ) -> Reader<Data<B::IntElem, D>> {
+    fn int_to_data<const D: usize>(tensor: &IntTensor<B, D>) -> Reader<Data<IntElem<B>, D>> {
         Self::int_into_data(tensor.clone())
     }
 
@@ -68,9 +66,9 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The tensor with the data.
     fn int_from_data<const D: usize>(
-        data: Data<B::IntElem, D>,
-        device: &B::Device,
-    ) -> B::IntTensorPrimitive<D>;
+        data: Data<IntElem<B>, D>,
+        device: &Device<B>,
+    ) -> IntTensor<B, D>;
 
     /// Gets the device of the tensor.
     ///
@@ -81,13 +79,13 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The device of the tensor.
-    fn int_device<const D: usize>(tensor: &B::IntTensorPrimitive<D>) -> B::Device;
+    fn int_device<const D: usize>(tensor: &IntTensor<B, D>) -> Device<B>;
 
     /// Moves the tensor to the given device.
     fn int_to_device<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
-        device: &B::Device,
-    ) -> B::IntTensorPrimitive<D>;
+        tensor: IntTensor<B, D>,
+        device: &Device<B>,
+    ) -> IntTensor<B, D>;
 
     /// Reshapes the tensor.
     ///
@@ -100,9 +98,9 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The tensor with the new shape.
     fn int_reshape<const D1: usize, const D2: usize>(
-        tensor: B::IntTensorPrimitive<D1>,
+        tensor: IntTensor<B, D1>,
         shape: Shape<D2>,
-    ) -> B::IntTensorPrimitive<D2>;
+    ) -> IntTensor<B, D2>;
 
     /// Gets the element at the given indices.
     ///
@@ -115,9 +113,9 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The elements at the given indices.
     fn int_slice<const D1: usize, const D2: usize>(
-        tensor: B::IntTensorPrimitive<D1>,
+        tensor: IntTensor<B, D1>,
         indices: [Range<usize>; D2],
-    ) -> B::IntTensorPrimitive<D1>;
+    ) -> IntTensor<B, D1>;
 
     /// Sets the element at the given indices.
     ///
@@ -130,10 +128,10 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The tensor with the element at the given indices set.
     fn int_slice_assign<const D1: usize, const D2: usize>(
-        tensor: B::IntTensorPrimitive<D1>,
+        tensor: IntTensor<B, D1>,
         indices: [Range<usize>; D2],
-        value: B::IntTensorPrimitive<D1>,
-    ) -> B::IntTensorPrimitive<D1>;
+        value: IntTensor<B, D1>,
+    ) -> IntTensor<B, D1>;
 
     /// Converts int tensor to float tensor.
     ///
@@ -144,7 +142,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The int tensor with the same data as the float tensor.
-    fn int_into_float<const D: usize>(tensor: B::IntTensorPrimitive<D>) -> B::TensorPrimitive<D>;
+    fn int_into_float<const D: usize>(tensor: IntTensor<B, D>) -> FloatTensor<B, D>;
 
     /// Fills the tensor with values from the source tensor if the mask is true at the given
     /// indices.
@@ -159,10 +157,10 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The tensor with the values filled.
     fn int_mask_where<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
-        mask: B::BoolTensorPrimitive<D>,
-        source: B::IntTensorPrimitive<D>,
-    ) -> B::IntTensorPrimitive<D>;
+        tensor: IntTensor<B, D>,
+        mask: BoolTensor<B, D>,
+        source: IntTensor<B, D>,
+    ) -> IntTensor<B, D>;
 
     /// Fills the tensor with the given value if the mask is true at the given indices.
     ///
@@ -176,10 +174,10 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The tensor with the values filled.
     fn int_mask_fill<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
-        mask: B::BoolTensorPrimitive<D>,
-        value: B::IntElem,
-    ) -> B::IntTensorPrimitive<D>;
+        tensor: IntTensor<B, D>,
+        mask: BoolTensor<B, D>,
+        value: IntElem<B>,
+    ) -> IntTensor<B, D>;
 
     /// Gather elements from the tensor at the given indices.
     ///
@@ -190,9 +188,9 @@ pub trait IntTensorOps<B: Backend> {
     /// * `indices` - The indices.
     fn int_gather<const D: usize>(
         dim: usize,
-        tensor: B::IntTensorPrimitive<D>,
-        indices: B::IntTensorPrimitive<D>,
-    ) -> B::IntTensorPrimitive<D>;
+        tensor: IntTensor<B, D>,
+        indices: IntTensor<B, D>,
+    ) -> IntTensor<B, D>;
 
     /// Scatter a given value to the tensor at the given indices.
     ///
@@ -208,10 +206,10 @@ pub trait IntTensorOps<B: Backend> {
     /// The tensor with the values scattered.
     fn int_scatter<const D: usize>(
         dim: usize,
-        tensor: B::IntTensorPrimitive<D>,
-        indices: B::IntTensorPrimitive<D>,
-        value: B::IntTensorPrimitive<D>,
-    ) -> B::IntTensorPrimitive<D>;
+        tensor: IntTensor<B, D>,
+        indices: IntTensor<B, D>,
+        value: IntTensor<B, D>,
+    ) -> IntTensor<B, D>;
 
     /// Select tensor elements along the given dimension corresponding to the given indices.
     ///
@@ -225,10 +223,10 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The tensor with the selected elements.
     fn int_select<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
+        tensor: IntTensor<B, D>,
         dim: usize,
-        indices: B::IntTensorPrimitive<1>,
-    ) -> B::IntTensorPrimitive<D>;
+        indices: IntTensor<B, 1>,
+    ) -> IntTensor<B, D>;
 
     /// Assign the selected elements along the given dimension corresponding to the given indices
     /// to the given value.
@@ -244,11 +242,11 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The tensor with the selected elements assigned to the given value.
     fn int_select_assign<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
+        tensor: IntTensor<B, D>,
         dim: usize,
-        indices: B::IntTensorPrimitive<1>,
-        value: B::IntTensorPrimitive<D>,
-    ) -> B::IntTensorPrimitive<D>;
+        indices: IntTensor<B, 1>,
+        value: IntTensor<B, D>,
+    ) -> IntTensor<B, D>;
 
     /// Repeats the tensor along the given dimension the given number of times.
     ///
@@ -262,10 +260,10 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The tensor with the given dimension repeated the given number of times.
     fn int_repeat<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
+        tensor: IntTensor<B, D>,
         dim: usize,
         times: usize,
-    ) -> B::IntTensorPrimitive<D> {
+    ) -> IntTensor<B, D> {
         let mut shape = Self::int_shape(&tensor);
         if shape.dims[dim] != 1 {
             panic!("Can only repeat dimension with dim=1");
@@ -300,10 +298,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The concatenated tensor.
-    fn int_cat<const D: usize>(
-        tensors: Vec<B::IntTensorPrimitive<D>>,
-        dim: usize,
-    ) -> B::IntTensorPrimitive<D>;
+    fn int_cat<const D: usize>(tensors: Vec<IntTensor<B, D>>, dim: usize) -> IntTensor<B, D>;
 
     /// Elementwise equality comparison.
     ///
@@ -315,10 +310,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The boolean tensor with the result of the comparison.
-    fn int_equal<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntTensorPrimitive<D>,
-    ) -> B::BoolTensorPrimitive<D>;
+    fn int_equal<const D: usize>(lhs: IntTensor<B, D>, rhs: IntTensor<B, D>) -> BoolTensor<B, D>;
 
     /// Elementwise equality comparison with a scalar.
     ///
@@ -330,10 +322,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The boolean tensor with the result of the comparison.
-    fn int_equal_elem<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntElem,
-    ) -> B::BoolTensorPrimitive<D>;
+    fn int_equal_elem<const D: usize>(lhs: IntTensor<B, D>, rhs: IntElem<B>) -> BoolTensor<B, D>;
 
     /// Elementwise greater than comparison.
     ///
@@ -345,10 +334,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The boolean tensor with the result of the comparison.
-    fn int_greater<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntTensorPrimitive<D>,
-    ) -> B::BoolTensorPrimitive<D>;
+    fn int_greater<const D: usize>(lhs: IntTensor<B, D>, rhs: IntTensor<B, D>) -> BoolTensor<B, D>;
 
     /// Elementwise greater than comparison with a scalar.
     ///
@@ -360,10 +346,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The boolean tensor with the result of the comparison.
-    fn int_greater_elem<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntElem,
-    ) -> B::BoolTensorPrimitive<D>;
+    fn int_greater_elem<const D: usize>(lhs: IntTensor<B, D>, rhs: IntElem<B>) -> BoolTensor<B, D>;
 
     /// Elementwise greater than or equal comparison.
     ///
@@ -376,9 +359,9 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The boolean tensor with the result of the comparison.
     fn int_greater_equal<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntTensorPrimitive<D>,
-    ) -> B::BoolTensorPrimitive<D>;
+        lhs: IntTensor<B, D>,
+        rhs: IntTensor<B, D>,
+    ) -> BoolTensor<B, D>;
 
     /// Elementwise greater than or equal comparison with a scalar.
     ///
@@ -391,9 +374,9 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The boolean tensor with the result of the comparison.
     fn int_greater_equal_elem<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntElem,
-    ) -> B::BoolTensorPrimitive<D>;
+        lhs: IntTensor<B, D>,
+        rhs: IntElem<B>,
+    ) -> BoolTensor<B, D>;
 
     /// Elementwise less than comparison.
     ///
@@ -405,10 +388,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The boolean tensor with the result of the comparison.
-    fn int_lower<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntTensorPrimitive<D>,
-    ) -> B::BoolTensorPrimitive<D>;
+    fn int_lower<const D: usize>(lhs: IntTensor<B, D>, rhs: IntTensor<B, D>) -> BoolTensor<B, D>;
 
     /// Elementwise less than comparison with a scalar.
     ///
@@ -420,10 +400,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The boolean tensor with the result of the comparison.
-    fn int_lower_elem<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntElem,
-    ) -> B::BoolTensorPrimitive<D>;
+    fn int_lower_elem<const D: usize>(lhs: IntTensor<B, D>, rhs: IntElem<B>) -> BoolTensor<B, D>;
 
     /// Elementwise less than or equal comparison.
     ///
@@ -436,9 +413,9 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The boolean tensor with the result of the comparison.
     fn int_lower_equal<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntTensorPrimitive<D>,
-    ) -> B::BoolTensorPrimitive<D>;
+        lhs: IntTensor<B, D>,
+        rhs: IntTensor<B, D>,
+    ) -> BoolTensor<B, D>;
 
     /// Elementwise less than or equal comparison with a scalar.
     ///
@@ -451,9 +428,9 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The boolean tensor with the result of the comparison.
     fn int_lower_equal_elem<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntElem,
-    ) -> B::BoolTensorPrimitive<D>;
+        lhs: IntTensor<B, D>,
+        rhs: IntElem<B>,
+    ) -> BoolTensor<B, D>;
 
     // ====  NUMERIC ==== //
 
@@ -467,10 +444,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The result of the addition.
-    fn int_add<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntTensorPrimitive<D>,
-    ) -> B::IntTensorPrimitive<D>;
+    fn int_add<const D: usize>(lhs: IntTensor<B, D>, rhs: IntTensor<B, D>) -> IntTensor<B, D>;
 
     /// Elementwise addition with a scalar.
     ///
@@ -482,10 +456,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The result of the addition.
-    fn int_add_scalar<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntElem,
-    ) -> B::IntTensorPrimitive<D>;
+    fn int_add_scalar<const D: usize>(lhs: IntTensor<B, D>, rhs: IntElem<B>) -> IntTensor<B, D>;
 
     /// Clamps a tensor under a minimum value.
     ///
@@ -497,10 +468,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The clamped tensor.
-    fn int_clamp_min<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
-        min: B::IntElem,
-    ) -> B::IntTensorPrimitive<D> {
+    fn int_clamp_min<const D: usize>(tensor: IntTensor<B, D>, min: IntElem<B>) -> IntTensor<B, D> {
         let mask = Self::int_lower_elem(tensor.clone(), min);
         Self::int_mask_fill(tensor, mask, min)
     }
@@ -515,10 +483,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The clamped tensor.
-    fn int_clamp_max<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
-        max: B::IntElem,
-    ) -> B::IntTensorPrimitive<D> {
+    fn int_clamp_max<const D: usize>(tensor: IntTensor<B, D>, max: IntElem<B>) -> IntTensor<B, D> {
         let mask = Self::int_greater_elem(tensor.clone(), max);
         Self::int_mask_fill(tensor, mask, max)
     }
@@ -535,10 +500,10 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The clamped tensor.
     fn int_clamp<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
-        min: B::IntElem,
-        max: B::IntElem,
-    ) -> B::IntTensorPrimitive<D> {
+        tensor: IntTensor<B, D>,
+        min: IntElem<B>,
+        max: IntElem<B>,
+    ) -> IntTensor<B, D> {
         Self::int_clamp_min(Self::int_clamp_max(tensor, max), min)
     }
 
@@ -552,10 +517,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The result of the subtraction.
-    fn int_sub<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntTensorPrimitive<D>,
-    ) -> B::IntTensorPrimitive<D>;
+    fn int_sub<const D: usize>(lhs: IntTensor<B, D>, rhs: IntTensor<B, D>) -> IntTensor<B, D>;
 
     /// Elementwise subtraction with a scalar.
     ///
@@ -567,10 +529,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The result of the subtraction.
-    fn int_sub_scalar<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntElem,
-    ) -> B::IntTensorPrimitive<D>;
+    fn int_sub_scalar<const D: usize>(lhs: IntTensor<B, D>, rhs: IntElem<B>) -> IntTensor<B, D>;
 
     /// Elementwise multiplication.
     ///
@@ -582,10 +541,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The result of the multiplication.
-    fn int_mul<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntTensorPrimitive<D>,
-    ) -> B::IntTensorPrimitive<D>;
+    fn int_mul<const D: usize>(lhs: IntTensor<B, D>, rhs: IntTensor<B, D>) -> IntTensor<B, D>;
 
     /// Elementwise multiplication with a scalar.
     ///
@@ -597,10 +553,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The result of the multiplication.
-    fn int_mul_scalar<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntElem,
-    ) -> B::IntTensorPrimitive<D>;
+    fn int_mul_scalar<const D: usize>(lhs: IntTensor<B, D>, rhs: IntElem<B>) -> IntTensor<B, D>;
 
     /// Elementwise division.
     ///
@@ -612,10 +565,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The result of the division.
-    fn int_div<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntTensorPrimitive<D>,
-    ) -> B::IntTensorPrimitive<D>;
+    fn int_div<const D: usize>(lhs: IntTensor<B, D>, rhs: IntTensor<B, D>) -> IntTensor<B, D>;
 
     /// Elementwise division with a scalar.
     ///
@@ -627,10 +577,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The result of the division.
-    fn int_div_scalar<const D: usize>(
-        lhs: B::IntTensorPrimitive<D>,
-        rhs: B::IntElem,
-    ) -> B::IntTensorPrimitive<D>;
+    fn int_div_scalar<const D: usize>(lhs: IntTensor<B, D>, rhs: IntElem<B>) -> IntTensor<B, D>;
 
     /// Elementwise negation.
     ///
@@ -641,8 +588,8 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The negated tensor.
-    fn int_neg<const D: usize>(tensor: B::IntTensorPrimitive<D>) -> B::IntTensorPrimitive<D> {
-        Self::int_mul_scalar(tensor, (-1.0).elem::<B::IntElem>())
+    fn int_neg<const D: usize>(tensor: IntTensor<B, D>) -> IntTensor<B, D> {
+        Self::int_mul_scalar(tensor, (-1.0).elem::<IntElem<B>>())
     }
 
     /// Creates a tensor of zeros.
@@ -655,7 +602,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The tensor of zeros.
-    fn int_zeros<const D: usize>(shape: Shape<D>, device: &B::Device) -> B::IntTensorPrimitive<D>;
+    fn int_zeros<const D: usize>(shape: Shape<D>, device: &Device<B>) -> IntTensor<B, D>;
 
     /// Creates a tensor of ones.
     ///
@@ -667,7 +614,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The tensor of ones.
-    fn int_ones<const D: usize>(shape: Shape<D>, device: &B::Device) -> B::IntTensorPrimitive<D>;
+    fn int_ones<const D: usize>(shape: Shape<D>, device: &Device<B>) -> IntTensor<B, D>;
 
     /// Creates a tensor filled with given value.
     ///
@@ -682,9 +629,9 @@ pub trait IntTensorOps<B: Backend> {
     /// The tensor filled with given value
     fn int_full<const D: usize>(
         shape: Shape<D>,
-        fill_value: B::IntElem,
-        device: &B::Device,
-    ) -> B::IntTensorPrimitive<D> {
+        fill_value: IntElem<B>,
+        device: &Device<B>,
+    ) -> IntTensor<B, D> {
         Self::int_add_scalar(Self::int_zeros(shape, device), fill_value)
     }
 
@@ -697,7 +644,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The sum of all elements in the tensor.
-    fn int_sum<const D: usize>(tensor: B::IntTensorPrimitive<D>) -> B::IntTensorPrimitive<1>;
+    fn int_sum<const D: usize>(tensor: IntTensor<B, D>) -> IntTensor<B, 1>;
 
     /// Sums all elements in the tensor along a dimension.
     ///
@@ -709,10 +656,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The sum of all elements in the tensor along the dimension.
-    fn int_sum_dim<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
-        dim: usize,
-    ) -> B::IntTensorPrimitive<D>;
+    fn int_sum_dim<const D: usize>(tensor: IntTensor<B, D>, dim: usize) -> IntTensor<B, D>;
 
     /// Computes the mean of all elements in the tensor.
     ///
@@ -723,7 +667,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The mean of all elements in the tensor.
-    fn int_mean<const D: usize>(tensor: B::IntTensorPrimitive<D>) -> B::IntTensorPrimitive<1> {
+    fn int_mean<const D: usize>(tensor: IntTensor<B, D>) -> IntTensor<B, 1> {
         let num_elems = B::int_shape(&tensor).num_elements();
         B::int_div_scalar(B::int_sum(tensor), (num_elems as i64).elem())
     }
@@ -737,10 +681,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The mean of all elements in the tensor along the dimension.
-    fn int_mean_dim<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
-        dim: usize,
-    ) -> B::IntTensorPrimitive<D>;
+    fn int_mean_dim<const D: usize>(tensor: IntTensor<B, D>, dim: usize) -> IntTensor<B, D>;
 
     /// Gets the indices of the maximum elements along a dimension.
     ///
@@ -752,10 +693,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The indices of the maximum elements along the dimension.
-    fn int_argmax<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
-        dim: usize,
-    ) -> B::IntTensorPrimitive<D>;
+    fn int_argmax<const D: usize>(tensor: IntTensor<B, D>, dim: usize) -> IntTensor<B, D>;
 
     /// Gets the indices of the minimum elements along a dimension.
     ///
@@ -767,10 +705,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The indices of the minimum elements along the dimension.
-    fn int_argmin<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
-        dim: usize,
-    ) -> B::IntTensorPrimitive<D>;
+    fn int_argmin<const D: usize>(tensor: IntTensor<B, D>, dim: usize) -> IntTensor<B, D>;
 
     /// Gets the maximum element in the tensor.
     ///
@@ -781,7 +716,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The maximum element in the tensor.
-    fn int_max<const D: usize>(tensor: B::IntTensorPrimitive<D>) -> B::IntTensorPrimitive<1> {
+    fn int_max<const D: usize>(tensor: IntTensor<B, D>) -> IntTensor<B, 1> {
         let shape = B::int_shape(&tensor);
         let tensor = B::int_reshape(tensor, Shape::new([shape.num_elements()]));
 
@@ -798,10 +733,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The maximum element in the tensor along the dimension.
-    fn int_max_dim<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
-        dim: usize,
-    ) -> B::IntTensorPrimitive<D> {
+    fn int_max_dim<const D: usize>(tensor: IntTensor<B, D>, dim: usize) -> IntTensor<B, D> {
         let index = B::int_argmax(tensor.clone(), dim);
 
         B::int_gather(D - 1, tensor, index)
@@ -818,9 +750,9 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The maximum elements and corresponding indices along the dimension.
     fn int_max_dim_with_indices<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
+        tensor: IntTensor<B, D>,
         dim: usize,
-    ) -> (B::IntTensorPrimitive<D>, B::IntTensorPrimitive<D>) {
+    ) -> (IntTensor<B, D>, IntTensor<B, D>) {
         let index = B::int_argmax(tensor.clone(), dim);
         let values = B::int_gather(D - 1, tensor, index.clone());
 
@@ -836,7 +768,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The minimum element in the tensor.
-    fn int_min<const D: usize>(tensor: B::IntTensorPrimitive<D>) -> B::IntTensorPrimitive<1> {
+    fn int_min<const D: usize>(tensor: IntTensor<B, D>) -> IntTensor<B, 1> {
         let shape = B::int_shape(&tensor);
         let tensor = B::int_reshape(tensor, Shape::new([shape.num_elements()]));
 
@@ -853,10 +785,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The minimum element in the tensor along the dimension.
-    fn int_min_dim<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
-        dim: usize,
-    ) -> B::IntTensorPrimitive<D> {
+    fn int_min_dim<const D: usize>(tensor: IntTensor<B, D>, dim: usize) -> IntTensor<B, D> {
         let index = B::int_argmin(tensor.clone(), dim);
 
         B::int_gather(D - 1, tensor, index)
@@ -873,9 +802,9 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The minimum elements and corresponding indices along the dimension.
     fn int_min_dim_with_indices<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
+        tensor: IntTensor<B, D>,
         dim: usize,
-    ) -> (B::IntTensorPrimitive<D>, B::IntTensorPrimitive<D>) {
+    ) -> (IntTensor<B, D>, IntTensor<B, D>) {
         let indices = B::int_argmin(tensor.clone(), dim);
         let values = B::int_gather(D - 1, tensor, indices.clone());
 
@@ -891,7 +820,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// A tensor with the same shape as `tensor` with absolute values.
-    fn int_abs<const D: usize>(tensor: B::IntTensorPrimitive<D>) -> B::IntTensorPrimitive<D>;
+    fn int_abs<const D: usize>(tensor: IntTensor<B, D>) -> IntTensor<B, D>;
 
     /// Transposes an int tensor.
     ///
@@ -902,7 +831,7 @@ pub trait IntTensorOps<B: Backend> {
     /// # Returns
     ///
     /// The transposed tensor.
-    fn int_transpose<const D: usize>(tensor: B::IntTensorPrimitive<D>) -> B::IntTensorPrimitive<D> {
+    fn int_transpose<const D: usize>(tensor: IntTensor<B, D>) -> IntTensor<B, D> {
         Self::int_swap_dims(tensor, D - 2, D - 1)
     }
 
@@ -918,8 +847,52 @@ pub trait IntTensorOps<B: Backend> {
     ///
     /// The tensor with the dimensions swapped.
     fn int_swap_dims<const D: usize>(
-        tensor: B::IntTensorPrimitive<D>,
+        tensor: IntTensor<B, D>,
         dim1: usize,
         dim2: usize,
-    ) -> B::IntTensorPrimitive<D>;
+    ) -> IntTensor<B, D>;
+
+    /// Returns a new tensor with the given dimension narrowed to the given range.
+    ///
+    /// # Arguments
+    ///
+    /// * `dim` - The dimension along which the tensor will be narrowed.
+    /// * `start` - The starting point of the given range.
+    /// * `length` - The ending point of the given range.
+    /// # Panics
+    ///
+    /// - If the dimension is greater than the number of dimensions of the tensor.
+    /// - If the given range exceeds the number of elements on the given dimension.
+    ///
+    /// # Returns
+    ///
+    /// A new tensor with the given dimension narrowed to the given range.
+    fn int_narrow<const D: usize>(
+        tensor: IntTensor<B, D>,
+        dim: usize,
+        start: usize,
+        length: usize,
+    ) -> IntTensor<B, D> {
+        narrow::<B, D, Int>(tensor, dim, start, length)
+    }
+
+    /// Split the tensor along the given dimension into chunks.
+    ///
+    /// # Arguments
+    ///
+    /// * `tensor` - The tensor.
+    /// * `chunks` - The number of chunks to be produced
+    /// * `times` - The dimension along which the tensor will be split.
+    ///
+    /// # Returns
+    ///
+    /// A vectors of tensors
+    ///
+    fn int_chunk<const D: usize>(
+        tensor: IntTensor<B, D>,
+        chunks: usize,
+        dim: usize,
+    ) -> Vec<IntTensor<B, D>> {
+        chunk::<B, D, Int>(tensor, chunks, dim)
+    }
 }

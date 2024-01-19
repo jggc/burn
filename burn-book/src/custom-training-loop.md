@@ -7,8 +7,8 @@ training loop instead of using a pre-built one in general.
 
 Burn's got you covered!
 
-We will start from the same example shown in the [basic workflow](./basic-workflow)
-section, but without using the `Learner` struct.
+We will start from the same example shown in the [basic workflow](./basic-workflow) section, but
+without using the `Learner` struct.
 
 ```rust, ignore
 #[derive(Config)]
@@ -27,7 +27,7 @@ pub struct MnistTrainingConfig {
     pub optimizer: AdamConfig,
 }
 
-pub fn run<B: ADBackend>(device: B::Device) {
+pub fn run<B: AutodiffBackend>(device: &B::Device) {
     // Create the configuration.
     let config_model = ModelConfig::new(10, 1024);
     let config_optimizer = AdamConfig::new();
@@ -36,7 +36,7 @@ pub fn run<B: ADBackend>(device: B::Device) {
     B::seed(config.seed);
 
     // Create the model and optimizer.
-    let mut model = config.model.init();
+    let mut model = config.model.init(device);
     let mut optim = config.optimizer.init();
 
     // Create the batcher.
@@ -64,7 +64,7 @@ As seen with the previous example, setting up the configurations and the dataloa
 Now, let's move forward and write our own training loop:
 
 ```rust, ignore
-pub fn run<B: ADBackend>(device: B::Device) {
+pub fn run<B: AutodiffBackend>(device: B::Device) {
     ...
 
     // Iterate over our training and validation loop for X epochs.
@@ -144,7 +144,8 @@ specifically `MNISTBatcher<B::InnerBackend>`; not using `model.valid()` will res
 error.
 
 You can find the code above available as an
-[example](https://github.com/burn-rs/burn/tree/main/examples/custom-training-loop) for you to test.
+[example](https://github.com/tracel-ai/burn/tree/main/examples/custom-training-loop) for you to
+test.
 
 ## Custom Type
 
@@ -153,8 +154,8 @@ beneficial to organize your program using intermediary types. There are various 
 it requires getting comfortable with generics.
 
 If you wish to group the optimizer and the model into the same structure, you have several options.
-It's important to note that the optimizer trait depends on both the `ADModule` trait and the
-`ADBackend` trait, while the module only depends on the `ADBackend` trait.
+It's important to note that the optimizer trait depends on both the `AutodiffModule` trait and the
+`AutodiffBackend` trait, while the module only depends on the `AutodiffBackend` trait.
 
 Here's a closer look at how you can create your types:
 
@@ -163,7 +164,7 @@ Here's a closer look at how you can create your types:
 ```rust, ignore
 struct Learner<B, O>
 where
-    B: ADBackend,
+    B: AutodiffBackend,
 {
     model: Model<B>,
     optim: O,
@@ -190,8 +191,8 @@ blocks to your struct.
 ```rust, ignore
 impl<B, M, O> Learner<M, O>
 where
-    B: ADBackend,
-    M: ADModule<B>,
+    B: AutodiffBackend,
+    M: AutodiffModule<B>,
     O: Optimizer<M, B>,
 {
     pub fn step(&mut self, _batch: MNISTBatch<B>) {
@@ -207,16 +208,16 @@ This will result in the following compilation error:
    unconstrained type parameter [E0207]
 ```
 
-To resolve this issue, you have two options. The first one is to make your function is generic over
+To resolve this issue, you have two options. The first one is to make your function generic over
 the backend and add your trait constraint within its definition:
 
 ```rust, ignore
 #[allow(dead_code)]
 impl<M, O> Learner2<M, O> {
-    pub fn step<B: ADBackend>(&mut self, _batch: MNISTBatch<B>)
+    pub fn step<B: AutodiffBackend>(&mut self, _batch: MNISTBatch<B>)
     where
-        B: ADBackend,
-        M: ADModule<B>,
+        B: AutodiffBackend,
+        M: AutodiffModule<B>,
         O: Optimizer<M, B>,
     {
         //

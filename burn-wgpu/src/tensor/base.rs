@@ -1,8 +1,9 @@
+use crate::codegen::{Elem, Item, Operator, Variable};
+use crate::element::WgpuElement;
 use crate::{
     compute::{WgpuComputeClient, WgpuHandle},
     unary, WgpuDevice,
 };
-use crate::{element::WgpuElement, kernel::unary_default};
 use burn_tensor::Shape;
 use std::marker::PhantomData;
 
@@ -19,46 +20,7 @@ pub struct WgpuTensor<E: WgpuElement, const D: usize> {
     pub device: WgpuDevice,
     /// The strides of the current tensor.
     pub strides: [usize; D],
-    elem: PhantomData<E>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct WgpuTensorDyn<E: WgpuElement> {
-    /// Compute client for wgpu.
-    pub client: WgpuComputeClient,
-    /// The buffer where the data are stored.
-    pub handle: WgpuHandle,
-    /// The device of the current tensor.
-    pub device: WgpuDevice,
-    pub(crate) shape: Vec<usize>,
-    pub(crate) strides: Vec<usize>,
-    elem: PhantomData<E>,
-}
-
-impl<E: WgpuElement, const D: usize> From<WgpuTensor<E, D>> for WgpuTensorDyn<E> {
-    fn from(value: WgpuTensor<E, D>) -> Self {
-        WgpuTensorDyn {
-            client: value.client,
-            handle: value.handle,
-            device: value.device,
-            shape: value.shape.dims.to_vec(),
-            strides: value.strides.to_vec(),
-            elem: PhantomData,
-        }
-    }
-}
-
-impl<E: WgpuElement, const D: usize> From<WgpuTensorDyn<E>> for WgpuTensor<E, D> {
-    fn from(value: WgpuTensorDyn<E>) -> Self {
-        WgpuTensor {
-            client: value.client,
-            handle: value.handle,
-            device: value.device,
-            shape: Shape::new(value.shape.try_into().expect("Wrong dimension")),
-            strides: value.strides.try_into().expect("Wrong dimension"),
-            elem: PhantomData,
-        }
-    }
+    pub(crate) elem: PhantomData<E>,
 }
 
 impl<E: WgpuElement, const D: usize> WgpuTensor<E, D> {
@@ -111,14 +73,17 @@ impl<E: WgpuElement, const D: usize> WgpuTensor<E, D> {
         }
     }
 
-    pub(crate) fn can_mut_broadcast(&self, tensor_other: &WgpuTensor<E, D>) -> bool {
+    pub(crate) fn can_mut_broadcast(&self, rhs: &WgpuTensor<E, D>) -> bool {
         if !self.handle.can_mut() {
             return false;
         }
 
         for i in 0..D {
+            let shape_lhs = self.shape.dims[i];
+            let shape_rhs = rhs.shape.dims[i];
+
             // Output tensor will be different from the mutable tensor.
-            if self.shape.dims[i] < tensor_other.shape.dims[i] {
+            if shape_lhs < shape_rhs {
                 return false;
             }
         }
@@ -135,8 +100,14 @@ impl<E: WgpuElement, const D: usize> WgpuTensor<E, D> {
         // slowdowns.
         //
         // The solution is just to use a simple unary compute shader.
-        unary!(CopyBuffer, body "output[id] = input[id];");
-        unary_default::<CopyBuffer, E, D>(self.clone())
+        unary!(
+            operator: |elem: Elem| Operator::AssignLocal {
+                input: Variable::Input(0, Item::Scalar(elem)),
+                out: Variable::Local(0, Item::Scalar(elem)),
+            },
+            input: self.clone(),
+            elem: E
+        )
     }
 
     /// Check if the tensor is safe to mutate.
