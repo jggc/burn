@@ -1,4 +1,4 @@
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 use burn::{
     config::Config,
@@ -13,7 +13,7 @@ use burn::{
         Embedding, EmbeddingConfig, Linear, LinearConfig,
     },
     tensor::{
-        backend::{ADBackend, Backend},
+        backend::{AutodiffBackend, Backend},
         Int, Tensor,
     },
     train::{ClassificationOutput, TrainOutput, TrainStep, ValidStep},
@@ -46,13 +46,13 @@ pub struct TextTranslationModel<B: Backend> {
 
 impl TextTranslationModelConfig {
     /// Initialize model with default weights
-    pub fn init<B: Backend>(&self) -> TextTranslationModel<B> {
-        let embedding_token = EmbeddingConfig::new(self.vocab_size, self.encoder.d_model).init();
-        let embedding_pos = EmbeddingConfig::new(self.max_seq_length, self.encoder.d_model).init();
-        let encoder = self.encoder.init();
-        let decoder = self.decoder.init();
+    pub fn init<B: Backend>(&self, device: &B::Device) -> TextTranslationModel<B> {
+        let embedding_token = EmbeddingConfig::new(self.vocab_size, self.encoder.d_model).init(device);
+        let embedding_pos = EmbeddingConfig::new(self.max_seq_length, self.encoder.d_model).init(device);
+        let encoder = self.encoder.init(device);
+        let decoder = self.decoder.init(device);
         // TODO not sure about self.vocab_size in the output layer
-        let output = LinearConfig::new(self.decoder.d_model, self.vocab_size).init();
+        let output = LinearConfig::new(self.decoder.d_model, self.vocab_size).init(device);
 
         TextTranslationModel {
             vocab_size: self.vocab_size,
@@ -104,7 +104,7 @@ impl<B: Backend> TextTranslationModel<B> {
         let input_mask_pad = item.input_mask_pad;
         let decoder_input = item.decoder_input;
 
-        let index_positions = Tensor::arange_device(0..seq_length, device)
+        let index_positions = Tensor::arange(0..seq_length, device)
             .reshape([1, seq_length]) // [[0..511]]
             .repeat(0, batch_size); // [[0..511]..batch_size times]
 
@@ -120,7 +120,7 @@ impl<B: Backend> TextTranslationModel<B> {
             .forward(TransformerEncoderInput::new(embedding).mask_pad(input_mask_pad.clone()));
 
         let [batch_size, seq_length] = decoder_input.dims();
-        let index_positions = Tensor::arange_device(0..seq_length, device)
+        let index_positions = Tensor::arange(0..seq_length, device)
             .reshape([1, seq_length])
             .repeat(0, batch_size);
 
@@ -140,7 +140,7 @@ impl<B: Backend> TextTranslationModel<B> {
         let output_flatten = output.reshape([batch_size * seq_length, self.vocab_size]);
         let expected_flatten = item.expected.reshape([batch_size * seq_length]);
 
-        let loss = CrossEntropyLoss::new(Some(self.pad_token));
+        let loss = CrossEntropyLoss::new(Some(self.pad_token), device);
         let loss = loss.forward(output_flatten.clone(), expected_flatten.clone());
 
         ClassificationOutput {
@@ -157,7 +157,7 @@ impl<B: Backend> TextTranslationModel<B> {
         let input = item.input;
         let input_mask_pad = item.input_mask_pad;
 
-        let index_positions = Tensor::arange_device(0..seq_length, device)
+        let index_positions = Tensor::arange(0..seq_length, device)
             .reshape([1, seq_length])
             .repeat(0, batch_size);
 
@@ -170,13 +170,15 @@ impl<B: Backend> TextTranslationModel<B> {
             .forward(TransformerEncoderInput::new(embedding).mask_pad(input_mask_pad.clone()));
 
         let start_token = 50257;
-        let mut predictions: Tensor<B, 2, Int> = Tensor::from_ints([[start_token]]).repeat(0, batch_size).to_device(device); // [batch_size, 1]
+        let mut predictions: Tensor<B, 2, Int> = Tensor::from_ints([[start_token]], device)
+            .repeat(0, batch_size)
+            .to_device(device); // [batch_size, 1]
         let mut cache = self.decoder.new_autoregressive_cache();
         // for _i in 1..self.max_seq_length + 1 {
         let start = Instant::now();
         for _i in 1..60 + 1 {
             let [batch_size, seq_length] = predictions.dims();
-            let index_positions = Tensor::arange_device(0..seq_length, device)
+            let index_positions = Tensor::arange(0..seq_length, device)
                 .reshape([1, seq_length])
                 .repeat(0, batch_size);
 
@@ -184,8 +186,8 @@ impl<B: Backend> TextTranslationModel<B> {
             let embedding_tokens = self.embedding_token.forward(predictions.clone());
             let embedding = (embedding_positions + embedding_tokens) / 2;
             let mask_attn = generate_autoregressive_mask(batch_size, seq_length, device);
-            let input = TransformerDecoderInput::new(embedding, memory.clone())
-                .target_mask_attn(mask_attn);
+            let input =
+                TransformerDecoderInput::new(embedding, memory.clone()).target_mask_attn(mask_attn);
 
             let decoded = self
                 .decoder
@@ -198,7 +200,7 @@ impl<B: Backend> TextTranslationModel<B> {
                 vec![
                     predictions,
                     next_predictions
-                        .slice([0..batch_size, seq_length-1..seq_length])
+                        .slice([0..batch_size, seq_length - 1..seq_length])
                         .reshape([batch_size, 1]),
                 ],
                 1,
@@ -243,7 +245,7 @@ impl<B: Backend> TextTranslationModel<B> {
     }
 }
 
-impl<B: ADBackend> TrainStep<TextTranslationTrainingBatch<B>, ClassificationOutput<B>>
+impl<B: AutodiffBackend> TrainStep<TextTranslationTrainingBatch<B>, ClassificationOutput<B>>
     for TextTranslationModel<B>
 {
     fn step(

@@ -1,14 +1,15 @@
 use crate::{data::tokenizer::Tokenizer, model::TextTranslationModel, Gpt2Tokenizer};
-use std::{
-    io::{self, Write},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use burn::{
-    autodiff::ADBackendDecorator, config::Config, data::dataloader::batcher::Batcher,
-    module::Module, record::DefaultRecorder, record::Recorder, tensor::backend::Backend,
+    backend::libtorch::{LibTorch, LibTorchDevice},
+    config::Config,
+    data::dataloader::batcher::Batcher,
+    module::Module,
+    record::DefaultRecorder,
+    record::Recorder,
+    tensor::backend::Backend,
 };
-use burn_tch::TchBackend;
 
 use crate::{
     data::TextTranslationBatcher, model::TextTranslationModelConfig, training::ExperimentConfig,
@@ -19,26 +20,26 @@ type Elem = burn::tensor::f16;
 #[cfg(not(feature = "f16"))]
 type Elem = f32;
 
-type InferenceBackend = burn::autodiff::ADBackendDecorator<burn_tch::TchBackend<Elem>>;
+type InferenceBackend = LibTorch<Elem>;
 
 pub struct TextTranslationInference {
-    device: <ADBackendDecorator<TchBackend<f32>> as Backend>::Device,
+    device: <LibTorch<f32> as Backend>::Device,
     artifact_dir: String,
     tokenizer: Arc<dyn Tokenizer>,
-    batcher: Arc<TextTranslationBatcher<ADBackendDecorator<TchBackend<f32>>>>,
+    batcher: Arc<TextTranslationBatcher<LibTorch<f32>>>,
     model: TextTranslationModel<InferenceBackend>,
 }
 
 impl TextTranslationInference {
     pub fn new_cuda_gpt(artifact_dir: String) -> Self {
         Self::new(
-            burn_tch::TchDevice::Cuda(0),
+            LibTorchDevice::Cuda(0),
             artifact_dir,
             Arc::new(Gpt2Tokenizer::default()),
         )
     }
     pub fn new(
-        device: <ADBackendDecorator<TchBackend<f32>> as Backend>::Device,
+        device: <LibTorch<f32> as Backend>::Device,
         artifact_dir: String,
         tokenizer: Arc<dyn Tokenizer>,
     ) -> Self {

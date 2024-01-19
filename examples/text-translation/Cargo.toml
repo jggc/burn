@@ -7,15 +7,15 @@ publish = false
 version = "0.1.0"
 
 [features]
-default = ["burn/dataset-sqlite-bundled"]
+# default = ["burn/dataset-sqlite-bundled"]
 f16 = []
 
 [dependencies]
 csv = "1.2"
 # Burn
-burn-tch = { path = "../../burn-tch" }
+# burn-tch = { path = "../../burn-tch" }
 
-burn = {path = "../../burn", features=["autodiff", "train", "ndarray"]}
+burn = {path = "../../burn", features=["autodiff", "train", "ndarray", "tch"]}
 
 postgres = "0.19.7"
 log = "0.4.20"

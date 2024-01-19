@@ -1,5 +1,5 @@
 use crate::data::tokenizer::Tokenizer;
-use burn::{module::Module, train::metric::LearningRateMetric};
+use burn::{module::Module, tensor::backend::AutodiffBackend, train::metric::LearningRateMetric};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -15,7 +15,6 @@ use burn::{
     nn::transformer::{TransformerDecoderConfig, TransformerEncoderConfig},
     optim::AdamConfig,
     record::{CompactRecorder, DefaultRecorder, Recorder},
-    tensor::backend::ADBackend,
     train::{
         metric::{AccuracyMetric, CUDAMetric, LossMetric},
         LearnerBuilder,
@@ -40,7 +39,7 @@ pub struct ExperimentConfig {
     pub num_epochs: usize,
 }
 
-pub fn train<B: ADBackend, D: Dataset<TextTranslationItem> + 'static>(
+pub fn train<B: AutodiffBackend, D: Dataset<TextTranslationItem> + 'static>(
     devices: Vec<B::Device>,
     dataset_train: D,
     dataset_valid: D,
@@ -64,7 +63,7 @@ pub fn train<B: ADBackend, D: Dataset<TextTranslationItem> + 'static>(
         tokenizer.pad_token(),
         config.max_seq_length,
     )
-    .init::<B>();
+    .init::<B>(device);
 
     println!("Training sample: {:?}", dataset_train.get(10).unwrap());
     println!(
