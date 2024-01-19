@@ -1,0 +1,17 @@
+[package]
+authors = ["jeangab <jeangabriel.gc@gmail.com>"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+name = "web-inference"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+axum = "0.7.4"
+serde.workspace = true
+tokio = { version= "1.35.1", features= ["rt-multi-thread"] }
+tracing-subscriber = "0.3.18"
+text-translation = { path = "../text-translation" }
+burn-tch = { path = "../../burn-tch" }
+burn = {path = "../../burn", features=["autodiff", "train", "ndarray"]}
