@@ -16,8 +16,8 @@ fn main() {
         if cfg!(target_os = "macos") {
             burn_tch::TchDevice::Mps
         } else {
-            // burn_tch::TchDevice::Cuda(0)
-            burn_tch::TchDevice::Cpu
+            burn_tch::TchDevice::Cuda(0)
+            // burn_tch::TchDevice::Cpu
         },
         // "/tmp/text-translation-clean-addresses-gpt2tokenizer",
         // "/home/jeangab/work/github/burn_models/text-translation-c4-gpt2tokenizer",

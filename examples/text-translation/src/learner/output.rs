@@ -9,6 +9,15 @@ pub struct TranslationOutput<B: Backend> {
     pub expected: Tensor<B, 2, Int>,
 }
 
+// TODO
+/*
+impl<B: Backend> Adaptor<AccuracyInput<B>> for TranslationOutput<B> {
+    fn adapt(&self) -> AccuracyInput<B> {
+        AccuracyInput::new(self.output.clone(), self.expected.clone())
+    }
+}
+*/
+
 impl<B: Backend> Adaptor<LossInput<B>> for TranslationOutput<B> {
     fn adapt(&self) -> LossInput<B> {
         LossInput::new(self.loss.clone())

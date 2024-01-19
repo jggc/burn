@@ -36,7 +36,7 @@ pub struct ExperimentConfig {
     pub max_seq_length: usize,
     #[config(default = 16)]
     pub batch_size: usize,
-    #[config(default = 200)]
+    #[config(default = 60)]
     pub num_epochs: usize,
 }
 
