@@ -33,7 +33,8 @@ pub struct TextTranslationInference {
 impl TextTranslationInference {
     pub fn new_cuda_gpt(artifact_dir: String) -> Self {
         Self::new(
-            LibTorchDevice::Cuda(0),
+            // LibTorchDevice::Cuda(0),
+            LibTorchDevice::Cpu,
             artifact_dir,
             Arc::new(Gpt2Tokenizer::default()),
         )
