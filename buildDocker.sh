@@ -2,7 +2,7 @@
 
 #docker login registry.nationtech.io -u nationtech
 
-IMAGE="registry.nationtech.io/groleau"
+IMAGE="registry.nationtech.io/inference-web"
 
 docker build . -t ${IMAGE} -t $(basename ${IMAGE})
 if [[ $? != 0 ]]; then
