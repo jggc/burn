@@ -11,15 +11,18 @@
 
 use std::sync::Arc;
 
-use burn::optim::decay::WeightDecayConfig;
-use text_translation::{training::ExperimentConfig, Gpt2Tokenizer, data::AddressMultiformatDataset};
+use burn::{
+    backend::{libtorch::LibTorchDevice, LibTorch},
+    optim::decay::WeightDecayConfig,
+};
+use text_translation::{data::GuessCountryDataset, training::ExperimentConfig, Gpt2Tokenizer};
 
 #[cfg(feature = "f16")]
 type Elem = burn::tensor::f16;
 #[cfg(not(feature = "f16"))]
 type Elem = f32;
 
-type Backend = burn::autodiff::ADBackendDecorator<burn_tch::TchBackend<Elem>>;
+type Backend = burn::backend::Autodiff<LibTorch<Elem>>;
 
 fn main() {
     let mut config = ExperimentConfig::new(
@@ -32,24 +35,24 @@ fn main() {
 
     config.batch_size = 10;
 
-    let dataset_train = AddressMultiformatDataset::train();
-    let dataset_valid = AddressMultiformatDataset::valid();
+    let dataset_train = GuessCountryDataset::train();
+    let dataset_valid = GuessCountryDataset::valid();
 
-    text_translation::training::train::<Backend, AddressMultiformatDataset>(
+    text_translation::training::train::<Backend, GuessCountryDataset>(
         vec![
-            burn_tch::TchDevice::Cuda(0),
-            // burn_tch::TchDevice::Cuda(1),
-            // burn_tch::TchDevice::Cuda(2),
-            // burn_tch::TchDevice::Cuda(3),
+            LibTorchDevice::Cuda(0),
+            // LibTorchDevice::Cuda(1),
+            // LibTorchDevice::Cuda(2),
+            // LibTorchDevice::Cuda(3),
         ],
         // vec![
-        //   burn_tch::TchDevice::Cpu
+        //   LibTorchDevice::Cpu
         // ],
         dataset_train,
         dataset_valid,
         config,
         Arc::new(Gpt2Tokenizer::default()),
-        "/datapool/burn_models/addressmultiformat-flant5small-gpttokenizer",
+        "/datapool/burn_models/guess-the-country-flant5small-gpttokenizer",
         None,
         // Some(101),
     );

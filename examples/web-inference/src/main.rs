@@ -1,3 +1,4 @@
+use std::env;
 use std::sync::Arc;
 
 use axum::extract::State;
@@ -19,9 +20,14 @@ async fn main() {
     println!("Hello, world!");
 
     println!("Building state");
+    let model_path = match env::var("BURN_MODEL_PATH") {
+        Ok(value) => value,
+        Err(_) => "/datapool/burn_models/addressmultiformat-flant5small-gpttokenizer/".to_string(),
+    };
+    println!("model_path : {}", model_path);
     let state = Arc::new(AppState {
         model: TextTranslationInference::new_cuda_gpt(
-            "/datapool/burn_models/addressmultiformat-flant5small-gpttokenizer/".to_string(),
+            model_path,
         ),
     });
 
@@ -33,7 +39,7 @@ async fn main() {
     // build our application with a route
     let app = Router::new()
         .route("/", get(root))
-        .route("/parse_address", post(parse_address))
+        .route("/run_inference", post(parse_address))
         .with_state(state);
 
     println!("Starting listenet");

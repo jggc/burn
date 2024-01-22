@@ -19,6 +19,8 @@ pub use dbpedia_classification::*;
 mod multitask_pretrain;
 pub use multitask_pretrain::*;
 mod masking;
+mod guess_the_country;
+pub use guess_the_country::*;
 
 pub struct TextTranslationDataset;
 
