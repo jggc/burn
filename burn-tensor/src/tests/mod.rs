@@ -62,7 +62,7 @@ macro_rules! testgen_all {
         burn_tensor::testgen_narrow!();
         burn_tensor::testgen_neg!();
         burn_tensor::testgen_one_hot!();
-        burn_tensor::testgen_powf!();
+        burn_tensor::testgen_powf_scalar!();
         burn_tensor::testgen_random!();
         burn_tensor::testgen_recip!();
         burn_tensor::testgen_repeat!();
@@ -78,6 +78,7 @@ macro_rules! testgen_all {
         burn_tensor::testgen_tanh!();
         burn_tensor::testgen_transpose!();
         burn_tensor::testgen_tri!();
+        burn_tensor::testgen_powf!();
 
         // test stats
         burn_tensor::testgen_var!();

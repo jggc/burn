@@ -29,6 +29,7 @@ mod narrow;
 mod neg;
 mod one_hot;
 mod powf;
+mod powf_scalar;
 mod random;
 mod recip;
 mod repeat;

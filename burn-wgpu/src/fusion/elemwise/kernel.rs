@@ -6,7 +6,7 @@ use crate::{
         source::DynKernelSource,
         WgpuFusionHandle,
     },
-    kernel::{elemwise_workgroup, WORKGROUP_DEFAULT},
+    kernel::elemwise_workgroup,
 };
 use burn_fusion::TensorDescription;
 use std::sync::Arc;
@@ -55,7 +55,7 @@ impl FusionKernel for VecElementWise {
         inputs: &[&TensorDescription],
         _outputs: &[&TensorDescription],
     ) -> Priority {
-        let is_unavailable = |handle: &WgpuFusionHandle, desc: &TensorDescription| {
+        let is_unavailable_input = |handle: &WgpuFusionHandle, desc: &TensorDescription| {
             let rank = handle.strides.len();
 
             // Last dimension strides should be 1, otherwise vecX won't be contiguous.
@@ -64,16 +64,27 @@ impl FusionKernel for VecElementWise {
             }
 
             // The last dimension should be a multiple of the vector size.
-            if desc.shape[rank - 1] % self.source.factor != 0 {
-                return true;
-            }
+            desc.shape[rank - 1] % self.source.factor != 0
+        };
+        let is_unavailable_output = |desc: &TensorDescription| {
+            let rank = desc.shape.len();
 
-            false
+            // The last dimension should be a multiple of the vector size.
+            desc.shape[rank - 1] % self.source.factor != 0
         };
 
         for (handle, tensor) in handles_inputs.iter().zip(inputs.iter()) {
-            if is_unavailable(handle, tensor) {
+            if is_unavailable_input(handle, tensor) {
                 return Priority::Unavailable;
+            }
+        }
+
+        // Only need to check when there is no input.
+        if handles_inputs.is_empty() {
+            for tensor in _outputs.iter() {
+                if is_unavailable_output(tensor) {
+                    return Priority::Unavailable;
+                }
             }
         }
 
@@ -88,11 +99,19 @@ impl ElementWiseSource {
         inputs: &[&TensorDescription],
         outputs: &[&TensorDescription],
     ) -> SelectedKernel {
+        let workgroup_size_x = self.source_normal.shader.workgroup_size.x;
+        let workgroup_size_y = self.source_normal.shader.workgroup_size.y;
+        assert_eq!(
+            workgroup_size_x, workgroup_size_y,
+            "The grid must be a square"
+        );
+        let workgroup_size = workgroup_size_x as usize;
+
         match inplace_available(&self.mappings, handles_inputs) {
             true => {
                 let reference_tensor = inputs[self.mappings[0].position_input];
                 let num_elems = calculate_num_elems_dyn_rank(&reference_tensor.shape);
-                let workgroup = elemwise_workgroup(num_elems / self.factor, WORKGROUP_DEFAULT);
+                let workgroup = elemwise_workgroup(num_elems / self.factor, workgroup_size);
                 let kernel = Box::new(DynamicKernel::new(self.source_inplace.clone(), workgroup));
                 let output_infos =
                     self.inplace_output2input
@@ -118,7 +137,7 @@ impl ElementWiseSource {
             false => {
                 let reference_tensor = outputs[0];
                 let num_elems = calculate_num_elems_dyn_rank(&reference_tensor.shape);
-                let workgroup = elemwise_workgroup(num_elems / self.factor, WORKGROUP_DEFAULT);
+                let workgroup = elemwise_workgroup(num_elems / self.factor, workgroup_size);
                 let kernel = Box::new(DynamicKernel::new(self.source_normal.clone(), workgroup));
                 let output_infos = outputs.iter().enumerate().map(|(pos, tensor)| {
                     let elem = self.source_normal.shader.outputs[pos].item.elem();
