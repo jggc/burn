@@ -1,5 +1,8 @@
 #BURN_REPO_PATH=~/devel/burn
-BURN_REPO_PATH=~/nt/brizo/burn/examples/text-classification
+#BURN_REPO_PATH=~/nt/brizo/burn/examples/text-classification
+
+BURN_REPO_PATH=~/Documents/burn/examples/text-classification
+
 source ${BURN_REPO_PATH}/venv/bin/activate
 torch_dir="$(pip3 show torch | grep -i -F Location | awk '{print $2}')"
 export LD_LIBRARY_PATH="$torch_dir/torch/lib"

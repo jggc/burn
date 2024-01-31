@@ -7,4 +7,4 @@ mod model;
 pub mod inference;
 pub mod training;
 
-pub use data::{AgNewsDataset, DbPediaDataset, TextClassificationDataset};
+pub use data::{CountryClassificationDataset, AgNewsDataset, DbPediaDataset, TextClassificationDataset};
