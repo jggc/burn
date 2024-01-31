@@ -6,7 +6,7 @@ use crate::TextClassificationDataset;
 // Stuct for items in Country Classification dataset
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct CountryClassificationItem {
-    pub input_string: String, // The text for classification
+    pub input_str: String, // The text for classification
     pub target_class: usize,  // The label of the text (classification category)
 }
 
@@ -14,35 +14,13 @@ pub struct CountryClassificationItem {
 pub struct CountryClassificationDataset {
     dataset: SqliteDataset<CountryClassificationItem>, // Underlying SQLite dataset
 }
-/*
-impl Into<TextClassificationItem> for CountryClassificationItem {
-    fn into(self) -> TextClassificationItem {
-        TextClassificationItem::new(self.input_string, self.target_class)
-    }
-}
-
-*/
-/*
-impl Dataset<TextClassificationItem> for CountryClassificationDataset {
-    fn get(&self, index: usize) -> Option<TextClassificationItem> {
-        match self.dataset.get(index) {
-            Some(item) => Some(item.into()),
-            None => None,
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.dataset.len()
-    }
-}
-*/
 
 // Implement the Dataset trait for the Country Classification dataset
 impl Dataset<TextClassificationItem> for CountryClassificationDataset {
     fn get(&self, index: usize) -> Option<TextClassificationItem> {
         self.dataset
             .get(index)
-            .map(|item| TextClassificationItem::new(item.input_string, item.target_class))
+            .map(|item| TextClassificationItem::new(item.input_str, item.target_class))
         //map countryclassificationitem to TextClassificationItem
     }
 

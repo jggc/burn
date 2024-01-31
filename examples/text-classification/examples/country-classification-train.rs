@@ -2,8 +2,8 @@ use burn::nn::transformer::TransformerEncoderConfig;
 use burn::optim::{decay::WeightDecayConfig, AdamConfig};
 use burn::tensor::backend::AutodiffBackend;
 
-use text_classification::training::ExperimentConfig;
 use text_classification::CountryClassificationDataset;
+use text_classification::training::ExperimentConfig;
 
 #[cfg(not(feature = "f16"))]
 #[allow(dead_code)]
