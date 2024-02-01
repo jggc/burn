@@ -12,10 +12,11 @@ type ElemType = f32;
 type ElemType = burn::tensor::f16;
 
 pub fn launch<B: AutodiffBackend>(devices: Vec<B::Device>) {
-    let config = ExperimentConfig::new(
+    let mut config = ExperimentConfig::new(
         TransformerEncoderConfig::new(256, 1024, 8, 4).with_norm_first(true),
         AdamConfig::new().with_weight_decay(Some(WeightDecayConfig::new(5e-5))),
     );
+    config.num_epochs = 100;
 
     text_classification::training::train::<B, CountryClassificationDataset>(
         devices,
